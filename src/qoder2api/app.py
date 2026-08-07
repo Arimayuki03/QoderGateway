@@ -5,6 +5,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+import httpx
 from fastapi import FastAPI, HTTPException, Header, Depends
 from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -20,7 +21,16 @@ from .accounts import (
     db_set_settings,
     import_current_auth,
     get_active_session,
-    rotate_next_account
+    rotate_next_account,
+    batch_import_accounts,
+)
+from .registrar import get_registrar_status, start_registration, stop_registration
+from .tokens import (
+    refresh_all_account_tokens,
+    refresh_one_account,
+    get_account_quota,
+    get_all_accounts_quota,
+    start_refresh_loop,
 )
 
 BASE_DIR = os.path.dirname(__file__)
@@ -184,6 +194,17 @@ async def import_account(verify: None = Depends(check_gateway_token)) -> dict[st
         raise HTTPException(status_code=500, detail=str(exc))
 
 
+@app.post("/ui/accounts/batch-import")
+async def batch_import(payload: dict[str, Any], verify: None = Depends(check_gateway_token)) -> dict[str, Any]:
+    """批量导入注册机导出的 JSON：{"accounts": [{user_id, token, refresh_token, ...}]}。"""
+    records = payload.get("accounts") or payload.get("records") or []
+    if not isinstance(records, list) or not records:
+        raise HTTPException(status_code=400, detail="accounts 数组为空")
+    result = batch_import_accounts(records)
+    add_log(f"Batch imported {result['imported']} accounts (skipped {result['skipped']})")
+    return {"status": "ok", **result}
+
+
 @app.post("/ui/accounts/select")
 async def select_account(payload: dict[str, Any], verify: None = Depends(check_gateway_token)) -> dict[str, Any]:
     uid = payload.get("uid")
@@ -213,6 +234,20 @@ async def toggle_account(payload: dict[str, Any], verify: None = Depends(check_g
     return {"status": "ok"}
 
 
+@app.post("/ui/accounts/refresh-tokens")
+async def refresh_account_tokens(verify: None = Depends(check_gateway_token)) -> dict[str, Any]:
+    """手动触发：刷新所有账号的 token（drt- → deviceToken/refresh）。"""
+    result = refresh_all_account_tokens()
+    add_log(f"Token refresh: ok={result['ok']} failed={result['failed']} total={result['total']}")
+    return {"status": "ok", **result}
+
+
+@app.get("/ui/accounts/quota")
+async def accounts_quota(verify: None = Depends(check_gateway_token)) -> dict[str, Any]:
+    """查看所有启用账号的限额（GET /api/v2/quota/usage）。"""
+    return get_all_accounts_quota()
+
+
 @app.delete("/ui/accounts/{uid}")
 async def delete_account(uid: str, verify: None = Depends(check_gateway_token)) -> dict[str, Any]:
     with get_db() as conn:
@@ -236,6 +271,32 @@ async def delete_account(uid: str, verify: None = Depends(check_gateway_token)) 
 @app.get("/ui/logs")
 async def get_logs(verify: None = Depends(check_gateway_token)) -> list[str]:
     return list(logs_queue)
+
+
+@app.post("/ui/registrar/start")
+async def registrar_start(payload: dict[str, Any] | None = None, verify: None = Depends(check_gateway_token)) -> dict[str, Any]:
+    """启动注册机（无限循环：parents 个母线程 × 每批 3 个子任务，直到调用 stop）。
+
+    body 可选：{"parents": 2}  —— 母线程数（1-6），每母线程 3 子任务并发。
+    """
+    payload = payload or {}
+    try:
+        parents = int(payload.get("parents", 2))
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="parents 参数无效")
+    return start_registration(parents=parents)
+
+
+@app.post("/ui/registrar/stop")
+async def registrar_stop(verify: None = Depends(check_gateway_token)) -> dict[str, Any]:
+    """请求停止：当前批次完成后停止，返回本次注册统计。"""
+    return stop_registration()
+
+
+@app.get("/ui/registrar/status")
+async def registrar_status(verify: None = Depends(check_gateway_token)) -> dict[str, Any]:
+    """查询注册机任务状态（stage / logs / result）。"""
+    return get_registrar_status()
 
 
 @app.get("/ui/config")
@@ -282,6 +343,38 @@ async def set_session(payload: dict[str, Any], verify: None = Depends(check_gate
         msg = f"Failed to authenticate with provided PAT: {exc}"
         add_log(msg, "ERROR")
         raise HTTPException(status_code=502, detail=msg) from exc
+
+
+def is_quota_error(exc: Exception) -> bool:
+    """判断是否为 quota/限流类错误（429 / quota / rate limit）。
+    这类错误需先查询真实限额确认，不能直接跳过账户。"""
+    if isinstance(exc, httpx.HTTPStatusError):
+        return exc.response.status_code == 429
+    if isinstance(exc, RuntimeError):
+        msg = str(exc).lower()
+        return any(k in msg for k in ("http 429", "quota", "rate limit", "insufficient"))
+    return False
+
+
+def is_account_error(exc: Exception) -> bool:
+    """判断是否'账号级'错误（token 无效/限额/服务端拒绝）。只有这类才应跳过账户。
+
+    网络/流中断/超时（如 httpx.ReadError 的 incomplete chunk read）是临时性问题，
+    换账户也无效，不应触发 rotate。
+    """
+    if isinstance(exc, httpx.HTTPStatusError):
+        return exc.response.status_code in (401, 403, 429)
+    if isinstance(exc, httpx.HTTPError):
+        return False  # 连接/超时/读错误等网络问题
+    if isinstance(exc, RuntimeError):
+        msg = str(exc).lower()
+        if any(code in msg for code in ("http 401", "http 403", "http 429")):
+            return True
+        for kw in ("unauthorized", "invalid token", "quota", "rate limit",
+                   "insufficient", "personal token", "credit"):
+            if kw in msg:
+                return True
+    return False
 
 
 @app.post("/v1/chat/completions")
@@ -336,12 +429,31 @@ async def chat_completions(payload: dict[str, Any], authorization: str | None = 
                 return resp
         except Exception as exc:
             current_uid = sess.identity.uid if 'sess' in locals() else "unknown"
-            add_log(f"Request failed on account {current_uid}: {exc}. Rotating to next account...", "WARNING")
-            try:
-                rotate_next_account(current_uid, str(exc))
-            except Exception as e:
-                add_log(f"Failed to rotate account: {e}", "ERROR")
-                raise HTTPException(status_code=502, detail=f"Request failed and no other account is available. Error: {exc}")
+            if is_account_error(exc):
+                if is_quota_error(exc):
+                    # quota 类错误：先发一次请求确认是否真正 exceeded，而不是直接跳过
+                    q = get_account_quota(current_uid)
+                    if q.get("ok"):
+                        quota = q["quota"]
+                        truly_exceeded = bool(quota.get("isQuotaExceeded")) or (quota.get("userQuota") or {}).get("remaining", 1) <= 0
+                        if not truly_exceeded:
+                            add_log(f"Quota check on {current_uid}: NOT exceeded (remaining={quota.get('userQuota', {}).get('remaining')}), not rotating.", "WARNING")
+                            raise HTTPException(status_code=502, detail=f"{exc}")
+                        add_log(f"Quota confirmed exceeded for {current_uid}: {exc}. Rotating...", "WARNING")
+                    else:
+                        # 限额查询失败：无法确认，保守不跳过账户
+                        add_log(f"Quota check failed for {current_uid} ({q.get('error')}), not rotating.", "WARNING")
+                        raise HTTPException(status_code=502, detail=f"{exc}")
+                else:
+                    add_log(f"Account-level error on {current_uid}: {exc}. Rotating to next account...", "WARNING")
+                try:
+                    rotate_next_account(current_uid, str(exc))
+                except Exception as e:
+                    add_log(f"Failed to rotate account: {e}", "ERROR")
+                    raise HTTPException(status_code=502, detail=f"Request failed and no other account is available. Error: {exc}")
+            else:
+                add_log(f"Transient error on account {current_uid}: {exc}. Not rotating account.", "WARNING")
+                raise HTTPException(status_code=502, detail=str(exc))
                 
     raise HTTPException(status_code=502, detail="Request failed on all available accounts.")
 
@@ -349,12 +461,13 @@ async def chat_completions(payload: dict[str, Any], authorization: str | None = 
 def main() -> None:
     import uvicorn
 
+    start_refresh_loop()  # 启动 token 定时刷新线程（每 6 小时）
+
     parser = argparse.ArgumentParser()
     parser.add_argument("--host", default=os.getenv("QODER_HOST", "127.0.0.1"))
     parser.add_argument("--port", type=int, default=int(os.getenv("QODER_PORT", "5050")))
     args = parser.parse_args()
     uvicorn.run("qoder2api.app:app", host=args.host, port=args.port, reload=False)
-
 
 if __name__ == "__main__":
     main()

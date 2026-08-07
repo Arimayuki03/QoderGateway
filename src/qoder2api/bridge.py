@@ -14,6 +14,9 @@ from .env import httpx_client_kwargs
 
 
 QODER_CHAT_URL = "https://api3.qoder.sh/algo/api/v2/service/pro/sse/agent_chat_generation?FetchKeys=llm_model_result&AgentId=agent_common&Encode=1"
+# 新版协议（Qoder CLI 现行）：OpenAI 兼容端点，纯 Bearer，无 COSY 签名，响应为标准 OpenAI SSE。
+# 性能远优于老版（老版默认带长 reasoning，复杂任务可到分钟级）。
+QODER_CHAT_URL_NEW = "https://api2-v2.qoder.sh/model/v1/chat/completions"
 
 
 def now_ms() -> int:
@@ -236,25 +239,26 @@ def build_qoder_messages(template_messages: list[dict[str, Any]], incoming: list
 
 
 def build_qoder_body(req: dict[str, Any], sess: SessionContext) -> tuple[dict[str, Any], str, bool]:
+    """新版协议 body：OpenAI 原生格式，直接透传 messages/tools。"""
     model = req.get("model") or "lite"
     messages = req.get("messages") if isinstance(req.get("messages"), list) else []
-    prompt = extract_latest_user_prompt(messages)
-    body = template_base()
-    request_id = str(uuid.uuid4())
-    body["request_id"] = request_id
-    body["chat_record_id"] = request_id
-    body["request_set_id"] = str(uuid.uuid4())
-    body["session_id"] = str(uuid.uuid4())
-    body["stream"] = True
-    body["aliyun_user_type"] = sess.identity.user_type
-    body["model_config"]["key"] = model
-    body["business"]["id"] = str(uuid.uuid4())
-    body["business"]["begin_at"] = now_ms()
-    body["business"]["name"] = prompt[:30]
-    body["chat_context"]["text"]["text"] = prompt
-    body["chat_context"]["extra"]["originalContent"]["text"] = prompt
     tools_enabled = bool(req.get("tools"))
-    body["messages"] = build_qoder_messages(body["messages"], messages, prompt, tools_enabled)
+    rid = str(uuid.uuid4())
+    body: dict[str, Any] = {
+        "model": model,
+        "messages": copy.deepcopy(messages or []),
+        "stream": True,
+        "stream_options": {"include_usage": True},
+        "metadata": {
+            "context": {
+                "request_id": rid,
+                "request_set_id": rid,
+                "session_id": str(uuid.uuid4()),
+                "task_id": "common",
+                "client_type": "qodercli",
+            }
+        },
+    }
     if tools_enabled:
         body["tools"] = copy.deepcopy(req["tools"])
     return body, model, tools_enabled
@@ -273,8 +277,21 @@ class BridgeDelta:
 
 def extract_delta(data_line: str) -> BridgeDelta:
     try:
-        wrapper = json.loads(data_line)
-        inner = wrapper.get("body") or ""
+        obj = json.loads(data_line)
+        if not isinstance(obj, dict):
+            return BridgeDelta()
+        # 新版：标准 OpenAI chunk（choices 直接在顶层）
+        if "choices" in obj:
+            for choice in obj.get("choices", []):
+                delta = choice.get("delta", {}) if isinstance(choice, dict) else {}
+                role = delta.get("role") or ""
+                content = delta.get("content") or ""
+                tool_calls = delta.get("tool_calls") if isinstance(delta.get("tool_calls"), list) else None
+                if role or content or tool_calls:
+                    return BridgeDelta(role, content, tool_calls)
+            return BridgeDelta()
+        # 老版：wrapper 内嵌 body 字符串
+        inner = obj.get("body") or ""
         if not inner:
             return BridgeDelta()
         inner_json = json.loads(inner)
@@ -319,11 +336,18 @@ class ToolCallAccumulator:
 
 
 async def qoder_stream_lines(sess: SessionContext, body: dict[str, Any], model: str) -> AsyncIterator[str]:
-    encoded_body = encoding.encode(json.dumps(body, ensure_ascii=False, separators=(",", ":")).encode())
-    extra = {"x-model-key": model, "x-model-source": body.get("model_config", {}).get("source", "system")}
-    headers = bearer_headers(sess, QODER_CHAT_URL, encoded_body, "text/event-stream", extra)
+    """新版协议：POST api2-v2.qoder.sh/model/v1/chat/completions，Bearer 直连。"""
+    ctx = (body.get("metadata") or {}).get("context") or {}
+    headers = {
+        "Authorization": f"Bearer {sess.identity.security_oauth_token}",
+        "Content-Type": "application/json",
+        "Accept": "text/event-stream",
+        "User-Agent": "qoder/1.1.16",
+        "X-Request-ID": ctx.get("request_id", ""),
+        "X-Session-ID": ctx.get("session_id", ""),
+    }
     async with httpx.AsyncClient(timeout=httpx.Timeout(300, connect=15), **httpx_client_kwargs()) as client:
-        async with client.stream("POST", QODER_CHAT_URL, content=encoded_body, headers=headers) as response:
+        async with client.stream("POST", QODER_CHAT_URL_NEW, json=body, headers=headers) as response:
             if response.status_code != 200:
                 text = await response.aread()
                 raise RuntimeError(f"HTTP {response.status_code} {text.decode(errors='replace')}")

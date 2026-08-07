@@ -71,5 +71,11 @@ def init_db():
         if not res_auth:
             conn.execute("INSERT INTO settings (key, value) VALUES ('auth_required', '0')")
 
+        # token_expires_at 列（幂等：已存在则忽略）
+        try:
+            conn.execute("ALTER TABLE accounts ADD COLUMN token_expires_at TEXT")
+        except Exception:
+            pass
+
 
 init_db()

@@ -1,4 +1,5 @@
 import copy
+import uuid
 from typing import Any
 
 from .auth import (
@@ -107,6 +108,52 @@ async def import_current_auth() -> dict[str, Any]:
         "user_tag": user_tag_val,
         "next_reset_at": next_reset
     }
+
+
+def batch_import_accounts(records: list[dict]) -> dict:
+    """批量导入账号（来自注册机导出的 JSON）。
+
+    每条记录字段：email/password/name/user_id/token/refresh_token/expires_at/...
+    返回 {"imported": n, "skipped": m}。
+    """
+    imported = 0
+    skipped = 0
+    with get_db() as conn:
+        for rec in records:
+            uid = str(rec.get("user_id") or "").strip()
+            token = str(rec.get("token") or rec.get("security_oauth_token") or "").strip()
+            if not uid and not token:
+                skipped += 1
+                continue
+            if not uid:
+                # 无 user_id 时用 token 前 12 位兜底主键
+                uid = "tok_" + token[:24]
+            existing = conn.execute("SELECT enabled FROM accounts WHERE uid = ?", (uid,)).fetchone()
+            enabled = existing[0] if existing else 1
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO accounts (
+                    uid, name, user_type, security_oauth_token, refresh_token, machine_id,
+                    enabled, last_status, last_error, quota, is_quota_exceeded, plan, user_tag, next_reset_at, token_expires_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, 'ok', NULL, 0, 0, 'PLAN_TIER_PRO_TRIAL', 'Pro Trial', NULL, ?)
+                """,
+                (
+                    uid,
+                    str(rec.get("name") or rec.get("email") or "Imported"),
+                    "personal_standard",
+                    token,
+                    str(rec.get("refresh_token") or ""),
+                    str(uuid.uuid4()),
+                    enabled,
+                    str(rec.get("expires_at") or ""),
+                ),
+            )
+            imported += 1
+        if not db_get_settings("active_uid"):
+            active = conn.execute("SELECT uid FROM accounts WHERE enabled = 1 LIMIT 1").fetchone()
+            if active:
+                db_set_settings("active_uid", active["uid"])
+    return {"imported": imported, "skipped": skipped}
 
 
 def get_active_session() -> SessionContext:
