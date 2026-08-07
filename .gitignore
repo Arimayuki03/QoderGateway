@@ -17,3 +17,7 @@ scripts/*_result.json
 scripts/new_device_result.json
 scripts/.last_profile
 scripts/*.png
+
+# qodergate-register 导出凭据
+accounts.json
+qodergate-register/accounts.json
