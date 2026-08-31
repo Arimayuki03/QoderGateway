@@ -13,6 +13,7 @@
   <img src="https://img.shields.io/badge/python-%3E%3D3.11-blue?logo=python&logoColor=white" alt="Python >= 3.11">
   <img src="https://img.shields.io/badge/fastapi-0.115+-green?logo=fastapi&logoColor=white" alt="FastAPI">
   <img src="https://img.shields.io/badge/license-MIT-orange" alt="License">
+  <a href="https://linux.do"><img src="https://img.shields.io/badge/LINUX_DO-%E7%A4%BE%E5%8C%BA-blue" alt="LINUX DO"></a>
 </p>
 
 ---
@@ -22,6 +23,10 @@
 本项目思路来源于 [cubk1/qoder2api](https://github.com/cubk1/qoder2api/)，在此基础上用 Python 重写了后端并新增了 WebUI 管理控制台、SQLite 持久化、多账号池轮转和独立文档站。
 
 This project is inspired by [cubk1/qoder2api](https://github.com/cubk1/qoder2api/). We rewrote the backend in Python and added a WebUI management console, SQLite persistence, multi-account pool rotation, and a standalone documentation site.
+
+特别感谢 [LINUX DO](https://linux.do) 社区提供的交流与推广平台。
+
+Special thanks to the [LINUX DO](https://linux.do) community for the platform of exchange and promotion.
 
 ## 功能 / Features
 
