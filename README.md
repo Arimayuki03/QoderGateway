@@ -44,6 +44,17 @@ cd QoderGateway
 uv sync
 ```
 
+### 前端构建 / Build Frontend
+
+```bash
+cd frontend
+npm install
+npm run build
+cd ..
+```
+
+构建产物会输出到 `src/qoder2api/static/`，后端启动时直接托管 WebUI 与文档站。
+
 ### 配置 / Configure
 
 ```bash
