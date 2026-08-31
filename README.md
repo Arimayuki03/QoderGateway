@@ -1,7 +1,3 @@
-<p align="center">
-  <img src="frontend/public/favicon.svg" width="80" height="80" alt="QoderGate Logo">
-</p>
-
 <h1 align="center">QoderGate</h1>
 
 <p align="center">
