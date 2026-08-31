@@ -257,7 +257,7 @@ def poll_device_token(poll_url: str, task_id: str | None = None, timeout: float 
 # 按钮识别（规则来自 scripts/buttons_dump.json 实测：button + '继 续' + ant-btn-primary）
 # ---------------------------------------------------------------------------
 def _normalize_text(text: Any) -> str:
-    return (text or "").replace("\u00a0", " ").replace(" ", "").replace("\n", "").replace("\r", "").strip()
+    return (text or "").replace("\u00a0", " ").replace(" ", "").replace("\n", "").replace("\r", "").strip().lower()
 
 
 def _score_button(feat: dict[str, Any]) -> int:
@@ -270,7 +270,7 @@ def _score_button(feat: dict[str, Any]) -> int:
         score -= 1000
     if tag == "button":
         score += 10
-    for pts, kw in ((100, "继续"), (90, "同意"), (90, "授权"), (80, "authorize")):
+    for pts, kw in ((100, "继续"), (100, "continue"), (90, "同意"), (90, "授权"), (80, "authorize")):
         if kw in text:
             score += pts
             break
@@ -375,6 +375,23 @@ class RegistrarBot:
     def _html_fp(page) -> str:
         return hashlib.md5((page.html or "").encode("utf-8", errors="ignore")).hexdigest()
 
+    def _locate(self, selector: str, timeout: float | None = None,
+                desc: str = "", displayed: bool = False) -> Any:
+        """定位元素；找不到时在控制台输出具体是哪个元素找不到，并抛出带定位符的错误。"""
+        from DrissionPage.errors import ElementNotFoundError, WaitTimeoutError
+        try:
+            if displayed:
+                self.page.wait.ele_displayed(selector, timeout=timeout or 10)
+                return self.page.ele(selector)
+            if timeout is None:
+                return self.page.ele(selector)
+            return self.page.ele(selector, timeout=timeout)
+        except (ElementNotFoundError, WaitTimeoutError):
+            label = f"（{desc}）" if desc else ""
+            msg = f"找不到元素: {selector}{label}"
+            _log(self.task_id, f"[locate] {msg}")
+            raise ElementNotFoundError(msg) from None
+
     def _find_submit_button(self, timeout: float = 10.0):
         pairs: list[tuple] = []
         for sel in ('css:button', 'css:a[href]', 'css:[role="button"]'):
@@ -411,19 +428,17 @@ class RegistrarBot:
         if btn is not None:
             btn.click()
             return
-        self.page.ele('css:button[type="submit"]').click()
+        _log(self.task_id, "[submit] 未识别到提交按钮（已尝试 css:button / css:a[href] / css:[role=button]），回退尝试 css:button[type=\"submit\"]")
+        self._locate('css:button[type="submit"]', desc="提交按钮").click()
 
     # ---- 填表（身份断言 + 清空 + 输入后值验证，防串扰） ----
     def _fill(self, selector: str, value: str, must_id: str | None = None,
-              placeholder: str | None = None, retries: int = 3) -> None:
-        page = self.page
+              retries: int = 3) -> None:
         for attempt in range(retries):
-            el = page.ele(selector, timeout=10)
+            el = self._locate(selector, timeout=10, desc="填表输入框")
             el_id = el.attr("id") or ""
             if must_id and el_id != must_id:
                 raise RuntimeError(f"填表定位错误: 期望 #{must_id}，实际 #{el_id} ({selector})")
-            if placeholder is not None and placeholder not in (el.attr("placeholder") or ""):
-                raise RuntimeError(f"填表定位错误: placeholder 不匹配 ({selector})")
             try:
                 el.clear()
             except Exception:
@@ -458,21 +473,21 @@ class RegistrarBot:
         _log(tid, f"[reg] name={first} {last}  mail={address}")
 
         self._open_hidden(REGISTER_URL)
-        page.wait.ele_displayed("#basic_firstName", timeout=60)
+        self._locate("#basic_firstName", timeout=60, displayed=True, desc="注册页姓输入框")
         _log(tid, "[reg] page loaded (hidden)")
 
         self._fill("#basic_firstName", first, must_id="basic_firstName")
         self._fill("#basic_lastName", last, must_id="basic_lastName")
-        self._fill("#basic_email", address, must_id="basic_email", placeholder="邮箱")
+        self._fill("#basic_email", address, must_id="basic_email")
         _log(tid, "[reg] name & email filled")
 
-        cb = page.ele("css:.ant-checkbox-input")
+        cb = self._locate("css:.ant-checkbox-input", desc="同意条款复选框")
         cb.parent().click()
         _log(tid, "[reg] checkbox checked")
         self._click_submit()
         _log(tid, "[reg] submitted email step")
 
-        page.wait.ele_displayed("#basic_password", timeout=60)
+        self._locate("#basic_password", timeout=60, displayed=True, desc="密码输入框")
         self._fill("#basic_password", password, must_id="basic_password")
         self._click_submit()
         _log(tid, "[reg] submitted password step")
@@ -516,7 +531,7 @@ class RegistrarBot:
                 otp_inputs[i].input(ch)
             _log(tid, f"[reg] OTP filled: {code}")
         else:
-            page.ele('css:input[aria-label^="OTP Input"]').input(code)
+            self._locate('css:input[aria-label^="OTP Input"]', desc="OTP 输入框").input(code)
 
         deadline = time.time() + 30
         while time.time() < deadline:
@@ -545,12 +560,14 @@ class RegistrarBot:
                 if btn is not None:
                     before_url = page.url
                     before_fp = self._html_fp(page)
+                    before_tabs = len(page.get_tabs())
                     _log(tid, f"[dev] found button '{btn.text.strip()}', clicking...")
                     btn.click()
                     changed = False
                     for _ in range(4):  # 2s
                         time.sleep(0.5)
-                        if page.url != before_url or self._html_fp(page) != before_fp:
+                        if (page.url != before_url or self._html_fp(page) != before_fp
+                                or len(page.get_tabs()) > before_tabs):  # target=_blank 会在新标签页打开
                             changed = True
                             break
                     if changed:
