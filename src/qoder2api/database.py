@@ -1,5 +1,7 @@
 import json
+import logging
 import os
+import secrets
 import sqlite3
 from pathlib import Path
 from typing import Any
@@ -7,6 +9,8 @@ from typing import Any
 from .env import load_dotenv
 
 load_dotenv()
+
+logger = logging.getLogger("qoder2api.database")
 
 DB_PATH = Path.home() / ".qoder" / "qoder2api.db"
 
@@ -69,13 +73,38 @@ def init_db():
         res = conn.execute("SELECT value FROM settings WHERE key = 'gateway_token'").fetchone()
         if not res:
             # 仅首次建库时读取 env；之后以 SQLite 为准（控制台可改）
-            default_token = os.getenv("QODER_ADMIN_PASSWORD", "").strip() or "admin"
+            env_token = os.getenv("QODER_ADMIN_PASSWORD", "").strip()
+            if env_token:
+                default_token = env_token
+            else:
+                # 留空时生成随机口令，不再使用可被猜到的默认口令 "admin"
+                default_token = secrets.token_urlsafe(12)
+                print(
+                    "\n"
+                    "======================================================================\n"
+                    "[安全提示] 未设置 QODER_ADMIN_PASSWORD，已自动生成管理口令：\n"
+                    "\n"
+                    f"    {default_token}\n"
+                    "\n"
+                    "该口令仅显示这一次，请妥善保存；也可设置 QODER_ADMIN_PASSWORD 后删除数据库重建。\n"
+                    f"数据库位置: {DB_PATH}\n"
+                    "======================================================================\n",
+                    flush=True,
+                )
             conn.execute("INSERT INTO settings (key, value) VALUES ('gateway_token', ?)", (default_token,))
 
         res_auth = conn.execute("SELECT value FROM settings WHERE key = 'auth_required'").fetchone()
         if not res_auth:
             # 安全默认：未显式配置时要求 API Key 鉴权
             conn.execute("INSERT INTO settings (key, value) VALUES ('auth_required', '1')")
+
+        # 历史库仍使用默认口令 "admin" 时不强制迁移，仅输出显著安全警告（不阻断服务）
+        row_token = conn.execute("SELECT value FROM settings WHERE key = 'gateway_token'").fetchone()
+        if row_token and row_token[0] == "admin":
+            logger.warning(
+                "安全警告：管理口令仍为默认值 'admin'，存在被猜解风险。"
+                "请尽快在 WebUI 控制台修改，或设置 QODER_ADMIN_PASSWORD 后删除数据库重建。"
+            )
 
         # token_expires_at 列（幂等：已存在则忽略）
         try:

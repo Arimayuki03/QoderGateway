@@ -134,6 +134,17 @@ _VQ = VerifierQueue()
 
 
 # ---------------------------------------------------------------------------
+# 日志打码：密码 / OTP 等敏感值只记录长度，不进日志
+# ---------------------------------------------------------------------------
+def _mask_secret(selector: str, value: str) -> str:
+    """selector 或字段名含 password/otp 关键词时打码为长度占位，否则保留原值。"""
+    lowered = (selector or "").lower()
+    if "password" in lowered or "passwd" in lowered or "otp" in lowered:
+        return f"<redacted:{len(value or '')} chars>"
+    return repr(value)
+
+
+# ---------------------------------------------------------------------------
 # YYDS Mail 集成
 # ---------------------------------------------------------------------------
 def _yyds_key() -> str | None:
@@ -206,7 +217,7 @@ def yyds_wait_code(address: str, task_id: str | None = None, timeout: float = 12
                 msg = r.json()["data"]["message"]
                 code = _extract_code(msg)
                 if code:
-                    _log(task_id, f"[mail] verification code = {code}")
+                    _log(task_id, f"[mail] verification code = <redacted:{len(code)} chars>")
                     return code
                 _log(task_id, "[mail] got message but no code, keep polling...")
             elif r.status_code == 204:
@@ -483,7 +494,8 @@ class RegistrarBot:
                 got = el.attr("value") or ""
             if got == value:
                 return
-            _log(self.task_id, f"[fill] {selector} 值验证失败(尝试{attempt + 1}): 期望 {value!r} 实际 {got!r}，重试")
+            # 值验证失败日志打码：密码/OTP 字段只记录长度，避免明文进日志
+            _log(self.task_id, f"[fill] {selector} 值验证失败(尝试{attempt + 1}): 期望 {_mask_secret(selector, value)} 实际 {_mask_secret(selector, got)}，重试")
         raise RuntimeError(f"多次填表失败: {selector}")
 
     # ---- 打开页面且全程隐藏（仅人机验证时 show_top 显示） ----
@@ -569,7 +581,7 @@ class RegistrarBot:
         if otp_inputs:
             for i, ch in enumerate(code[: len(otp_inputs)]):
                 otp_inputs[i].input(ch)
-            _log(tid, f"[reg] OTP filled: {code}")
+            _log(tid, f"[reg] OTP filled: <redacted:{len(code)} chars>")
         else:
             self._locate('css:input[aria-label^="OTP Input"]', desc="OTP 输入框").input(code)
 
@@ -628,9 +640,10 @@ class RegistrarBot:
 
         _log(tid, ">>> 已点击'继 续'，等待服务端完成认证并 pull <<<")
         cred = poll_device_token(flow["poll_url"], task_id=tid, timeout=300, proxy=self.proxy)
+        # key 存在但值为 None 时 get 的默认值不生效，统一 or 空串，避免 None 入库触发 NOT NULL 约束
         return {
-            "token": cred.get("token"),
-            "refresh_token": cred.get("refresh_token"),
+            "token": cred.get("token") or "",
+            "refresh_token": cred.get("refresh_token") or "",
             "user_id": cred.get("user_id"),
             "expires_at": cred.get("expires_at"),
             "refresh_token_expires_at": cred.get("refresh_token_expires_at"),
@@ -651,13 +664,14 @@ def _random_name() -> tuple[str, str]:
 
 
 def _random_password(length: int = 12) -> str:
-    lower = random.choice(string.ascii_lowercase)
-    upper = random.choice(string.ascii_uppercase)
-    digit = random.choice(string.digits)
-    symbol = random.choice("!@#$%^&*()-_=+")
-    rest = "".join(random.choices(string.ascii_letters + string.digits + "!@#$%^&*()-_=+", k=length - 4))
+    # 密码属于安全凭据，用 secrets（加密安全随机）而非 random
+    lower = secrets.choice(string.ascii_lowercase)
+    upper = secrets.choice(string.ascii_uppercase)
+    digit = secrets.choice(string.digits)
+    symbol = secrets.choice("!@#$%^&*()-_=+")
+    rest = "".join(secrets.choice(string.ascii_letters + string.digits + "!@#$%^&*()-_=+") for _ in range(length - 4))
     pool = list(lower + upper + digit + symbol + rest)
-    random.shuffle(pool)
+    secrets.SystemRandom().shuffle(pool)
     return "".join(pool)
 
 
@@ -789,6 +803,13 @@ def _save_account(task_id: str, acct: dict, cred: dict) -> str:
     uid = cred.get("user_id") or ""
     if not uid:
         raise ValueError("device 凭据缺少 user_id，无法入库")
+    # security_oauth_token / refresh_token 均为 NOT NULL 列：
+    # key 存在但值为 None 时 cred.get(key, "") 不会兜底，必须 or 空串
+    token = cred.get("token") or ""
+    refresh_token = cred.get("refresh_token") or ""
+    if not token:
+        # 校验放入库前，避免 IntegrityError 在 INSERT 时才爆、丢掉整个注册成果
+        raise ValueError("device 凭据缺少 token（为空），注册成果无法入库，请重试")
     machine_id = str(uuid.uuid4())
     with get_db() as conn:
         existing = conn.execute("SELECT enabled FROM accounts WHERE uid = ?", (uid,)).fetchone()
@@ -802,7 +823,7 @@ def _save_account(task_id: str, acct: dict, cred: dict) -> str:
             """,
             (
                 uid, acct.get("name") or "Registered", "personal_standard",
-                cred.get("token", ""), cred.get("refresh_token", ""), machine_id,
+                token, refresh_token, machine_id,
                 enabled, cred.get("expires_at") or "",
             ),
         )

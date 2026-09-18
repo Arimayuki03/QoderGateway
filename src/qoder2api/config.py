@@ -12,7 +12,8 @@ def load_config() -> dict[str, Any]:
         allowed_keys = [r[0] for r in rows]
 
         res_tok = conn.execute("SELECT value FROM settings WHERE key = 'gateway_token'").fetchone()
-        gateway_token = res_tok[0] if res_tok else "admin"
+        # 缺行时返回空串并让调用方 fail closed（init_db 建库时必然写入，正常不会命中）
+        gateway_token = res_tok[0] if res_tok else ""
 
     return {
         "auth_required": auth_required,
@@ -23,11 +24,14 @@ def load_config() -> dict[str, Any]:
 
 def save_config(config: dict[str, Any]) -> None:
     with get_db() as conn:
-        auth_required_str = "1" if config.get("auth_required", False) else "0"
-        conn.execute(
-            "INSERT OR REPLACE INTO settings (key, value) VALUES ('auth_required', ?)",
-            (auth_required_str,)
-        )
+        # 仅当 payload 显式包含 auth_required 时才写该行，缺失时保留现值，
+        # 避免部分更新（如只改 API Key）把 API 鉴权静默关闭
+        if "auth_required" in config:
+            auth_required_str = "1" if config.get("auth_required") else "0"
+            conn.execute(
+                "INSERT OR REPLACE INTO settings (key, value) VALUES ('auth_required', ?)",
+                (auth_required_str,)
+            )
         
         if "gateway_token" in config:
             conn.execute(

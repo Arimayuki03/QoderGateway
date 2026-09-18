@@ -1,3 +1,4 @@
+import time
 import uuid
 from typing import Any
 
@@ -242,28 +243,46 @@ def get_active_session() -> SessionContext:
     )
 
 
+# 轮转的临时失败记录（纯内存，不写表结构）：uid → 最后一次失败时间戳；
+# 5 分钟内失败过的账号轮转时优先避开，进程重启即清零
+_ROTATE_FAILURE_COOLDOWN = 300.0
+_recent_failures: dict[str, float] = {}
+
+
 def rotate_next_account(failed_uid: str, error_msg: str) -> SessionContext:
     """Marks failed account in database, rotates to the next enabled, and returns it."""
+    now = time.time()
+    _recent_failures[failed_uid] = now
     with get_db() as conn:
         conn.execute(
             "UPDATE accounts SET last_status = 'failed', last_error = ? WHERE uid = ?",
             (error_msg, failed_uid)
         )
-        
+
         # Get all enabled accounts
         rows = conn.execute("SELECT * FROM accounts WHERE enabled = 1").fetchall()
-        
+
     enabled_accounts = [dict(r) for r in rows]
     if not enabled_accounts:
         raise ValueError("All enabled accounts have failed or no enabled accounts exist.")
 
+    # 优先排除：刚失败的账号本身 + 5 分钟内失败过的账号（失败账号不再留在轮转池）；
+    # 排除后无可用账号（如单账号）则回退为全量启用账号，保证仍有请求路径
+    candidates = [
+        acc for acc in enabled_accounts
+        if acc["uid"] != failed_uid
+        and now - _recent_failures.get(acc["uid"], 0.0) >= _ROTATE_FAILURE_COOLDOWN
+    ]
+    if not candidates:
+        candidates = enabled_accounts
+
     # Find next cyclic account
     next_acc = None
     try:
-        failed_idx = next(i for i, acc in enumerate(enabled_accounts) if acc["uid"] == failed_uid)
-        next_acc = enabled_accounts[(failed_idx + 1) % len(enabled_accounts)]
+        failed_idx = next(i for i, acc in enumerate(candidates) if acc["uid"] == failed_uid)
+        next_acc = candidates[(failed_idx + 1) % len(candidates)]
     except StopIteration:
-        next_acc = enabled_accounts[0]
+        next_acc = candidates[0]
 
     db_set_settings("active_uid", next_acc["uid"])
     

@@ -4,6 +4,7 @@ import collections
 import hmac
 import os
 import time
+from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -48,8 +49,59 @@ INDEX_HTML = Path(BASE_DIR) / "static" / "index.html"
 CONSOLE_HTML = Path(BASE_DIR) / "static" / "console.html"
 DOCS_HTML = Path(BASE_DIR) / "static" / "docs.html"
 
-app = FastAPI(title="qoder2api-python")
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    # 应用启动时开启 token 定时刷新线程：uvicorn 直接加载 app 时也能生效；
+    # start_refresh_loop 内部幂等，不会与 main() 里的调用重复启动
+    start_refresh_loop()
+    yield
+
+
+app = FastAPI(
+    title="qoder2api-python",
+    lifespan=lifespan,
+    # 关闭 FastAPI 自带的交互文档与 OpenAPI schema（项目自己的文档站是 /documents），
+    # 避免把接口结构暴露给未鉴权访问者
+    docs_url=None,
+    redoc_url=None,
+    openapi_url=None,
+)
 app.mount("/assets", StaticFiles(directory=os.path.join(BASE_DIR, "static", "assets")), name="assets")
+
+# 基础安全响应头（S6）：纯 ASGI 中间件实现，不包装响应流（不影响 SSE），也不校验 Host
+# （会破坏局域网直接以 IP/主机名访问的场景）
+_SECURITY_HEADERS = (
+    (b"x-frame-options", b"DENY"),
+    (b"x-content-type-options", b"nosniff"),
+    (b"referrer-policy", b"same-origin"),
+)
+
+
+class SecurityHeadersMiddleware:
+    """为所有 HTTP 响应补充基础安全响应头；响应已携带同名头时不覆盖。"""
+
+    def __init__(self, app: Any) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Any, receive: Any, send: Any) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        async def send_with_headers(message: dict[str, Any]) -> None:
+            if message["type"] == "http.response.start":
+                headers = list(message.get("headers") or [])
+                present = {name for name, _ in headers}
+                for name, value in _SECURITY_HEADERS:
+                    if name not in present:
+                        headers.append((name, value))
+                message = {**message, "headers": headers}
+            await send(message)
+
+        await self.app(scope, receive, send_with_headers)
+
+
+app.add_middleware(SecurityHeadersMiddleware)
 
 _local_auth_error: str | None = None
 # 无账号时的自动导入每个进程只尝试一次，避免 /ui/status 轮询反复触发导入与刷日志
@@ -77,15 +129,21 @@ add_log("Qoder2API Python Bridge initialized.")
 
 def check_gateway_token(x_gateway_token: str | None = Header(default=None)):
     config = load_config()
-    gateway_token = config.get("gateway_token", "admin")
-    if not x_gateway_token or not hmac.compare_digest(str(x_gateway_token), str(gateway_token)):
+    # 库中缺行时为空串，直接 fail closed（不再兜底默认口令）
+    gateway_token = str(config.get("gateway_token") or "")
+    if not gateway_token or not x_gateway_token or not hmac.compare_digest(str(x_gateway_token), gateway_token):
         raise HTTPException(status_code=401, detail="Unauthorized gateway access")
 
 
 # /ui/verify 简单限速：按来源 IP 记录最近失败，失败后 5s 冷却；
+# 15 分钟窗口内失败满 5 次锁定 15 分钟（防爆破，纯内存实现）；
 # 定期清理过期记录，避免字典无限增长
 _verify_attempts: dict[str, float] = {}
+_verify_failures: dict[str, list[float]] = {}
 _VERIFY_COOLDOWN = 5.0
+_VERIFY_MAX_FAILURES = 5
+_VERIFY_FAIL_WINDOW = 900.0
+_VERIFY_LOCKOUT = 900.0
 _VERIFY_GC_INTERVAL = 300.0
 _verify_last_gc = 0.0
 
@@ -99,21 +157,33 @@ async def verify_gateway(payload: dict[str, Any], request: Request) -> dict[str,
         for ip, ts in list(_verify_attempts.items()):
             if now - ts > 3600:
                 _verify_attempts.pop(ip, None)
+        for ip, fails in list(_verify_failures.items()):
+            if not fails or now - fails[-1] > 3600:
+                _verify_failures.pop(ip, None)
         _verify_last_gc = now
+    # 失败计数锁定：15 分钟窗口内失败满 5 次，锁定 15 分钟
+    recent_fails = [ts for ts in _verify_failures.get(client_ip, []) if now - ts < _VERIFY_FAIL_WINDOW]
+    if len(recent_fails) >= _VERIFY_MAX_FAILURES and now < recent_fails[-1] + _VERIFY_LOCKOUT:
+        raise HTTPException(status_code=429, detail="失败次数过多，已临时锁定，请 15 分钟后再试")
     if now - _verify_attempts.get(client_ip, 0.0) < _VERIFY_COOLDOWN:
         raise HTTPException(status_code=429, detail="尝试过于频繁，请稍后再试")
     token = str(payload.get("token", "")).strip()
     config = load_config()
-    if token and hmac.compare_digest(token, str(config.get("gateway_token", "admin"))):
+    gateway_token = str(config.get("gateway_token") or "")
+    if token and gateway_token and hmac.compare_digest(token, gateway_token):
+        # 验证成功：清空该 IP 的冷却与失败记录
         _verify_attempts.pop(client_ip, None)
+        _verify_failures.pop(client_ip, None)
         return {"status": "ok"}
     _verify_attempts[client_ip] = now
+    _verify_failures.setdefault(client_ip, []).append(now)
     raise HTTPException(status_code=401, detail="Invalid Gateway Token")
 
 
 async def get_session() -> SessionContext:
     global _local_auth_error, _pat_import_attempted, _local_import_attempted
-    data = db_load_accounts()
+    # 同步 SQLite 放线程池执行，避免阻塞事件循环（聊天热路径与 /ui/status 共用本函数）
+    data = await asyncio.to_thread(db_load_accounts)
     if not data["accounts"]:
         # Try importing environment PAT if available (once per process)
         pat = os.getenv("QODER_PAT", "").strip()
@@ -139,7 +209,7 @@ async def get_session() -> SessionContext:
             except Exception as exc:
                 add_log(f"Failed to import environment PAT: {exc}", "ERROR")
 
-        data = db_load_accounts()
+        data = await asyncio.to_thread(db_load_accounts)
         if not data["accounts"] and not _local_import_attempted:
             _local_import_attempted = True
             add_log("No accounts stored. Attempting to auto-import current local Qoder auth session...")
@@ -152,7 +222,7 @@ async def get_session() -> SessionContext:
                 add_log(f"Auto-import of local session failed: {exc}", "WARNING")
 
     try:
-        return get_active_session()
+        return await asyncio.to_thread(get_active_session)
     except Exception as exc:
         raise HTTPException(
             status_code=400,
@@ -469,16 +539,29 @@ def is_account_error(exc: Exception) -> bool:
     return False
 
 
+def _api_key_allowed(incoming_key: str, allowed_keys: list[Any]) -> bool:
+    """常量时间校验 API Key：先比长度可提前失败，再逐个 compare_digest，
+    避免短路比较泄漏前缀匹配信息。"""
+    for allowed in allowed_keys:
+        allowed = str(allowed)
+        if len(incoming_key) != len(allowed):
+            continue
+        if hmac.compare_digest(incoming_key, allowed):
+            return True
+    return False
+
+
 @app.post("/v1/chat/completions")
 async def chat_completions(payload: dict[str, Any], authorization: str | None = Header(default=None)):
-    config = load_config()
+    # 同步 SQLite 放线程池执行，避免聊天热路径阻塞事件循环（同 /ui/accounts/* 写法）
+    config = await asyncio.to_thread(load_config)
     if config.get("auth_required", False):
         allowed_keys = config.get("allowed_keys", [])
         incoming_key = None
         if authorization and authorization.startswith("Bearer "):
             incoming_key = authorization[len("Bearer "):].strip()
-        
-        if not incoming_key or incoming_key not in allowed_keys:
+
+        if not incoming_key or not _api_key_allowed(incoming_key, allowed_keys):
             add_log("Access denied: Invalid or missing API Key in request header.", "WARNING")
             raise HTTPException(status_code=401, detail="Invalid or missing API Key")
 
@@ -486,8 +569,8 @@ async def chat_completions(payload: dict[str, Any], authorization: str | None = 
     stream = bool(payload.get("stream", False))
     messages_count = len(payload.get("messages", []))
     add_log(f"Incoming completion request: model={model}, stream={stream}, messages={messages_count}")
-    
-    accounts_data = db_load_accounts()
+
+    accounts_data = await asyncio.to_thread(db_load_accounts)
     enabled_count = sum(1 for acc in accounts_data["accounts"] if acc.get("enabled", True))
     max_retries = max(1, enabled_count)
     sess: SessionContext | None = None
@@ -529,7 +612,11 @@ async def chat_completions(payload: dict[str, Any], authorization: str | None = 
                     q = await asyncio.to_thread(get_account_quota, current_uid)
                     if q.get("ok"):
                         quota = q["quota"]
-                        truly_exceeded = bool(quota.get("isQuotaExceeded")) or (quota.get("userQuota") or {}).get("remaining", 1) <= 0
+                        # remaining 可能为 null/缺失：先做类型判断再比较，避免 None <= 0 抛 TypeError 变 500
+                        remaining = (quota.get("userQuota") or {}).get("remaining")
+                        truly_exceeded = bool(quota.get("isQuotaExceeded")) or (
+                            isinstance(remaining, (int, float)) and remaining <= 0
+                        )
                         if not truly_exceeded:
                             add_log(f"Quota check on {current_uid}: NOT exceeded (remaining={quota.get('userQuota', {}).get('remaining')}), not rotating.", "WARNING")
                             raise HTTPException(status_code=502, detail=f"{exc}")

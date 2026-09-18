@@ -139,22 +139,26 @@ def get_all_accounts_quota() -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 _refresh_thread: threading.Thread | None = None
 _refresh_lock = threading.Lock()
+_refresh_started = False  # 模块级幂等标记：lifespan 与 main() 只允许启动一次
 
 
 def _refresh_loop() -> None:
+    # 先立即刷新一次再进入周期睡眠：避免服务启动后最长 6 小时内 token 无人刷新
     while True:
-        time.sleep(REFRESH_INTERVAL)
         try:
             result = refresh_all_account_tokens()
             print(f"[refresh] ok={result['ok']} failed={result['failed']} total={result['total']}", flush=True)
         except Exception as e:
             print(f"[refresh] loop error: {e}", flush=True)
+        time.sleep(REFRESH_INTERVAL)
 
 
 def start_refresh_loop() -> None:
-    """启动后台定时刷新线程（幂等）。"""
-    global _refresh_thread
+    """启动后台定时刷新线程（幂等：FastAPI lifespan 与 main() 双入口只启动一次）。"""
+    global _refresh_thread, _refresh_started
     with _refresh_lock:
-        if _refresh_thread is None or not _refresh_thread.is_alive():
-            _refresh_thread = threading.Thread(target=_refresh_loop, daemon=True)
-            _refresh_thread.start()
+        if _refresh_started:
+            return
+        _refresh_started = True
+        _refresh_thread = threading.Thread(target=_refresh_loop, daemon=True)
+        _refresh_thread.start()

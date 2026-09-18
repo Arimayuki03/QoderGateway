@@ -7,7 +7,7 @@ QoderGate has two authentication layers: one for the management console and one 
 The WebUI uses the gateway token you enter on login. Frontend requests send it as:
 
 ```http
-X-Gateway-Token: admin
+X-Gateway-Token: <gateway-token>
 ```
 
 This protects routes such as:
@@ -16,6 +16,10 @@ This protects routes such as:
 - `/ui/accounts`
 - `/ui/config`
 - `/ui/logs`
+
+### First Startup
+
+If `QODER_ADMIN_PASSWORD` is left empty when the database is first created, the gateway generates a strong random password and prints it to stdout once. Save it immediately - it will not be shown again. To regenerate, set `QODER_ADMIN_PASSWORD` and delete the database file, then restart. The legacy default password `admin` is no longer used.
 
 ## External API Keys
 

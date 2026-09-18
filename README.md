@@ -69,7 +69,8 @@ QODER_ADMIN_PASSWORD=your-strong-password
 
 > **注意：`QODER_ADMIN_PASSWORD` 只在首次建库时生效（写入 SQLite），
 > 之后以控制台存储的口令为准，可在 WebUI 中修改。**
-> **默认密码是 `admin`，强烈建议第一次登录后立即修改。**
+> **首次启动若留空，系统会自动生成随机口令并打印到控制台（仅显示这一次，请妥善保存），
+> 不再使用默认口令 `admin`；也可设置 `QODER_ADMIN_PASSWORD` 后删除数据库重建。**
 
 ### 内置注册机 / Built-in Registrar
 
@@ -118,7 +119,7 @@ curl http://127.0.0.1:5050/v1/chat/completions \
 |------|------|--------|
 | `QODER_HOST` | 服务绑定地址 | `127.0.0.1` |
 | `QODER_PORT` | 服务端口 | `5050` |
-| `QODER_ADMIN_PASSWORD` | 管理员密码（仅首次建库时生效，之后以 SQLite/WebUI 为准） | `admin` |
+| `QODER_ADMIN_PASSWORD` | 管理员密码（仅首次建库时生效，之后以 SQLite/WebUI 为准；留空则首次启动随机生成并打印） | 随机生成 |
 | `YYDS_API_KEY` | YYDS Mail API Key（内置注册机必填，`AC-` 开头） | 空 |
 | `QODER_PROXY` | 出站代理地址 | 空 |
 | `QODER_ENABLE_DOCUMENTS` | 是否启用文档页 | `1` |
