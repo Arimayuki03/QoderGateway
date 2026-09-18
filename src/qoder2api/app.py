@@ -73,7 +73,12 @@ app = FastAPI(
     redoc_url=None,
     openapi_url=None,
 )
-app.mount("/assets", StaticFiles(directory=os.path.join(BASE_DIR, "static", "assets")), name="assets")
+# 静态资源是前端构建产物（.gitignore 忽略 src/qoder2api/static/）：全新 checkout 或
+# 纯后端安装时不存在。缺失时跳过挂载而不是在导入期抛错，保证 app 可导入、可启动
+# （API 与测试不依赖 WebUI；页面路由由 _html_page 返回构建提示）
+_ASSETS_DIR = os.path.join(BASE_DIR, "static", "assets")
+if os.path.isdir(_ASSETS_DIR):
+    app.mount("/assets", StaticFiles(directory=_ASSETS_DIR), name="assets")
 
 # 基础安全响应头（S6）：纯 ASGI 中间件实现，不包装响应流（不影响 SSE），也不校验 Host
 # （会破坏局域网直接以 IP/主机名访问的场景）
@@ -300,23 +305,35 @@ async def get_session() -> SessionContext:
         )
 
 
+def _html_page(path: Path) -> HTMLResponse:
+    """读取静态页面；产物缺失（未执行前端构建）时返回 404 构建提示而不是 500。"""
+    try:
+        return HTMLResponse(path.read_text(encoding="utf-8"))
+    except OSError:
+        return HTMLResponse(
+            "<h1>Static assets not found</h1>"
+            "<p>Build the frontend first: <code>cd frontend &amp;&amp; npm install &amp;&amp; npm run build</code></p>",
+            status_code=404,
+        )
+
+
 @app.get("/", response_class=HTMLResponse)
 async def index() -> HTMLResponse:
     if not env_bool("QODER_ENABLE_LANDING", True):
         raise HTTPException(status_code=404, detail="Landing page is disabled")
-    return HTMLResponse(INDEX_HTML.read_text(encoding="utf-8"))
+    return _html_page(INDEX_HTML)
 
 
 @app.get("/console", response_class=HTMLResponse)
 async def console() -> HTMLResponse:
-    return HTMLResponse(CONSOLE_HTML.read_text(encoding="utf-8"))
+    return _html_page(CONSOLE_HTML)
 
 
 @app.get("/documents", response_class=HTMLResponse)
 async def documents() -> HTMLResponse:
     if not env_bool("QODER_ENABLE_DOCUMENTS", True):
         raise HTTPException(status_code=404, detail="Documents page is disabled")
-    return HTMLResponse(DOCS_HTML.read_text(encoding="utf-8"))
+    return _html_page(DOCS_HTML)
 
 
 @app.get("/ui/status")

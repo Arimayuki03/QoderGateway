@@ -10,7 +10,7 @@ for _p in (str(REPO_ROOT / "src"), str(Path(__file__).resolve().parent)):
         sys.path.insert(0, _p)
 
 import support  # noqa: E402  # 必须先于 qoder2api 导入（设置环境守卫）
-from support import DBBackedTestCase  # noqa: E402
+from support import DBBackedTestCase, TEST_GATEWAY_TOKEN  # noqa: E402
 
 import qoder2api.app as app_module  # noqa: E402
 import qoder2api.database as database  # noqa: E402
@@ -42,8 +42,10 @@ class GetDbContextManagerTest(DBBackedTestCase):
 
 class SecurityHeadersTest(DBBackedTestCase):
     def test_csp_header_present(self):
+        # 走 /ui/verify 而不是 /：静态产物（.gitignore 忽略）在 CI 全新 checkout 中缺失，
+        # 页面路由会返回 404 构建提示，CSP 断言不应依赖前端是否已构建
         client = TestClient(app_module.app)
-        r = client.get("/")
+        r = client.post("/ui/verify", json={"token": TEST_GATEWAY_TOKEN})
         self.assertEqual(r.status_code, 200)
         csp = r.headers.get("content-security-policy", "")
         self.assertTrue(csp.startswith("default-src 'self'"))
@@ -53,6 +55,28 @@ class SecurityHeadersTest(DBBackedTestCase):
         self.assertIn("https://fonts.googleapis.com", csp)
         self.assertIn("https://fonts.gstatic.com", csp)
         self.assertEqual(r.headers.get("x-frame-options"), "DENY")
+
+
+class StaticAssetsMissingTest(DBBackedTestCase):
+    """静态产物缺失（全新 checkout / 未构建前端）时后端仍可用。
+
+    导入期不再因 static/assets 不存在而抛 RuntimeError（挂载有存在性守卫，
+    该行为由 CI 全新 checkout 天然回归覆盖）；页面路由返回 404 构建提示而非 500。
+    """
+
+    def test_page_route_returns_build_hint_when_static_missing(self):
+        import asyncio
+
+        missing = Path("__nonexistent_build__") / "index.html"
+        original = app_module.INDEX_HTML
+        app_module.INDEX_HTML = missing
+        try:
+            resp = asyncio.run(app_module.index())
+        finally:
+            app_module.INDEX_HTML = original
+        self.assertEqual(resp.status_code, 404)
+        body = resp.body.decode("utf-8")
+        self.assertIn("npm run build", body)
 
 
 class BuildQoderBodyTest(DBBackedTestCase):
