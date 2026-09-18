@@ -62,13 +62,13 @@ const UI_TEXT = {
     title: {
       dashboard: 'System Overview', accounts: 'Account Pool', playground: 'AI Playground', apiKeys: 'API Management', logs: 'Service Logs', docs: 'Documentation', register: 'Auto Registrar',
     },
-    common: { docs: 'Docs', support: 'Support', healthy: 'Healthy', offline: 'Offline', signOut: 'Sign Out', refresh: 'Refresh', add: 'Add', delete: 'Delete', copy: 'Copy' },
+    common: { docs: 'Docs', support: 'Support', healthy: 'Healthy', offline: 'Offline', checking: 'Checking...', signOut: 'Sign Out', refresh: 'Refresh', add: 'Add', delete: 'Delete', copy: 'Copy' },
     dashboard: {
       serviceStatus: 'Service Status', allGatewaysActive: 'All gateways active', noActiveSession: 'No active session', accountPool: 'Account Pool', activeSessions: 'Active Qoder accounts', apiAuth: 'API Auth', openAccess: 'Open access', activeUser: 'Active User', systemBriefing: 'System Briefing', readyBrief: 'Gateway is running. {count} account(s) are available for routing.', notReadyBrief: 'No active session is available. Import an account or add a PAT first.', recentNotifications: 'Recent Notifications', authImportError: 'Auth Import Error', sessionActive: 'Session Active', credentialConfig: 'Credential Configuration', credentialDesc: 'Add a Qoder PAT or import the current local Qoder auth session.', patPlaceholder: 'Enter Qoder PAT...', addPat: 'Add PAT', saving: 'Saving...', autoImport: 'Auto Import',
     },
     accounts: { desc: 'Manage Qoder accounts used by the gateway for request routing and failover.', refreshStatus: 'Refresh Status', importAccounts: 'Import Accounts', search: 'Search accounts...', empty: 'No accounts imported. Click Import Accounts or add a PAT from Dashboard.', showing: 'Showing {count} account(s)' },
     playground: { modelConfig: 'Model Configuration', streamResponse: 'Stream Response', systemPrompt: 'System Prompt', systemPromptPlaceholder: "Define the AI's persona...", ask: 'Ask anything...', send: 'Send', waiting: 'Waiting for response...' },
-    api: { generate: 'Generate New Key', desc: 'Manage authentication keys and gateway access permissions for client requests.', gatewayAuth: 'Gateway Authentication', gatewayAuthDesc: 'Toggle API key validation for incoming /v1 requests.', systemStatus: 'System Status', activeKeys: 'Active Keys', configured: 'configured', activeAccessKeys: 'Active Access Keys', keyPlaceholder: 'Enter or paste a key...', noKeys: 'No API keys configured. Generate one above.', bestPractices: 'Security Best Practices', bestPracticesDesc: 'Do not expose API keys in client-side code. Rotate keys when they appear in logs, screenshots, or shared scripts.', securityPolicy: 'Security Policy' },
+    api: { generate: 'Generate New Key', desc: 'Manage authentication keys and gateway access permissions for client requests.', gatewayAuth: 'Gateway Authentication', gatewayAuthDesc: 'Toggle API key validation for incoming /v1 requests.', systemStatus: 'System Status', activeKeys: 'Active Keys', configured: 'configured', activeAccessKeys: 'Active Access Keys', keyPlaceholder: 'Enter or paste a key...', noKeys: 'No API keys configured. Generate one above.', bestPractices: 'Security Best Practices', bestPracticesDesc: 'Do not expose API keys in client-side code. Rotate keys when they appear in logs, screenshots, or shared scripts.' },
     logs: { account: 'Account', status: 'Status', range: 'Range', allAccounts: 'All Accounts', allStatuses: 'All Statuses', allTime: 'All time', lastHour: 'Last hour', noLogs: 'No logs available', noMatch: 'No logs match current filters', timestamp: 'Timestamp', level: 'Level', message: 'Message' },
     register: {
       desc: 'Register multiple Qoder accounts in parallel, pull device credentials and auto-save them into the pool. Browsers stay hidden in the background; each task pops to top once for human verification, then hides again — finish one, next takes its turn.',
@@ -110,13 +110,13 @@ const UI_TEXT = {
     title: {
       dashboard: '系统概览', accounts: '账号池', playground: '调试对话', apiKeys: 'API 管理', logs: '服务日志', docs: '文档', register: '自动注册机',
     },
-    common: { docs: '文档', support: '支持', healthy: '正常', offline: '未就绪', signOut: '退出', refresh: '刷新', add: '添加', delete: '删除', copy: '复制' },
+    common: { docs: '文档', support: '支持', healthy: '正常', offline: '未就绪', checking: '检查中...', signOut: '退出', refresh: '刷新', add: '添加', delete: '删除', copy: '复制' },
     dashboard: {
       serviceStatus: '服务状态', allGatewaysActive: '网关可用', noActiveSession: '没有可用账号', accountPool: '账号池', activeSessions: '可参与路由的 Qoder 账号', apiAuth: 'API 鉴权', openAccess: '未开启鉴权', activeUser: '当前账号', systemBriefing: '运行状态', readyBrief: '网关正在运行，当前有 {count} 个账号可用于请求路由。', notReadyBrief: '当前没有可用会话，请先导入账号或添加 PAT。', recentNotifications: '最近状态', authImportError: '本地登录导入失败', sessionActive: '账号已连接', credentialConfig: '凭据配置', credentialDesc: '添加 Qoder PAT，或导入本机已有的 Qoder 登录会话。', patPlaceholder: '输入 Qoder PAT...', addPat: '添加 PAT', saving: '保存中...', autoImport: '自动导入',
     },
     accounts: { desc: '管理网关用于请求路由和失败切换的 Qoder 账号。', refreshStatus: '刷新状态', importAccounts: '导入账号', search: '搜索账号...', empty: '还没有导入账号。点击导入账号，或在控制台添加 PAT。', showing: '共 {count} 个账号' },
     playground: { modelConfig: '模型配置', streamResponse: '流式响应', systemPrompt: '系统提示词', systemPromptPlaceholder: '定义模型的角色或行为...', ask: '输入要发送的内容...', send: '发送', waiting: '正在等待响应...' },
-    api: { generate: '生成新 Key', desc: '管理客户端请求网关时使用的 API Key 和访问权限。', gatewayAuth: '网关 API 鉴权', gatewayAuthDesc: '控制 /v1 请求是否必须携带 API Key。', systemStatus: '系统状态', activeKeys: '可用 Key', configured: '已配置', activeAccessKeys: '已启用的 API Key', keyPlaceholder: '输入或粘贴 API Key...', noKeys: '还没有配置 API Key。请先生成并添加。', bestPractices: '安全建议', bestPracticesDesc: '不要把 API Key 写在前端代码里。如果 Key 出现在日志、截图或共享脚本中，请及时删除并重新生成。', securityPolicy: '安全策略' },
+    api: { generate: '生成新 Key', desc: '管理客户端请求网关时使用的 API Key 和访问权限。', gatewayAuth: '网关 API 鉴权', gatewayAuthDesc: '控制 /v1 请求是否必须携带 API Key。', systemStatus: '系统状态', activeKeys: '可用 Key', configured: '已配置', activeAccessKeys: '已启用的 API Key', keyPlaceholder: '输入或粘贴 API Key...', noKeys: '还没有配置 API Key。请先生成并添加。', bestPractices: '安全建议', bestPracticesDesc: '不要把 API Key 写在前端代码里。如果 Key 出现在日志、截图或共享脚本中，请及时删除并重新生成。' },
     logs: { account: '账号', status: '级别', range: '时间范围', allAccounts: '全部账号', allStatuses: '全部级别', allTime: '全部时间', lastHour: '最近 1 小时', noLogs: '暂无日志', noMatch: '没有匹配当前筛选条件的日志', timestamp: '时间', level: '级别', message: '内容' },
     register: {
       desc: '并行注册多个 Qoder 账号并拉取 Device 凭据，成功后自动入库。浏览器平时隐藏后台，人机验证时置顶显示，划完一个自动轮到下一个。',
@@ -156,6 +156,44 @@ const TOAST_STYLES: Record<ToastType, { bg: string; border: string; icon: string
   INFO: { bg: 'bg-white', border: 'border-l-[3px] border-l-toast-info', icon: 'info', iconFill: 'text-toast-info' },
 }
 
+// 剪贴板帮助函数：优先 async Clipboard API，非安全上下文（如通过 LAN IP + http 访问时 navigator.clipboard 缺失）回退 execCommand
+async function copyTextToClipboard(text: string): Promise<boolean> {
+  try {
+    if (window.isSecureContext && navigator.clipboard) {
+      await navigator.clipboard.writeText(text)
+      return true
+    }
+  } catch { /* 回退到 execCommand */ }
+  try {
+    const ta = document.createElement('textarea')
+    ta.value = text
+    ta.setAttribute('readonly', '')
+    ta.style.position = 'fixed'
+    ta.style.top = '-9999px'
+    ta.style.opacity = '0'
+    document.body.appendChild(ta)
+    ta.select()
+    const ok = document.execCommand('copy')
+    ta.remove()
+    return ok
+  } catch {
+    return false
+  }
+}
+
+// 限额 percentage 透传上游 JSON，可能是 0-1 或 0-100，显示前归一化到 0-1
+function normalizeQuotaPct(p: unknown): number {
+  const v = typeof p === 'number' && Number.isFinite(p) ? p : 0
+  const ratio = v > 1 ? v / 100 : v
+  return Math.min(1, Math.max(0, ratio))
+}
+
+// API Key 掩码显示：前 8 位（如 qg_live_）+ 掩码 + 末 4 位
+function maskApiKey(key: string): string {
+  if (key.length <= 12) return '••••••'
+  return `${key.slice(0, 8)}••••••${key.slice(-4)}`
+}
+
 // ─── Custom UI Components ───
 
 function CustomCheckbox({ checked, onChange, label }: { checked: boolean; onChange: (v: boolean) => void; label: string }) {
@@ -179,6 +217,7 @@ function CustomCheckbox({ checked, onChange, label }: { checked: boolean; onChan
 
 function CustomSelect({ value, onChange, options, placeholder }: { value: string; onChange: (v: string) => void; options: { value: string; label: string }[]; placeholder?: string }) {
   const [open, setOpen] = useState(false)
+  const [highlightIndex, setHighlightIndex] = useState(0)
   const ref = useRef<HTMLDivElement>(null)
   const selected = options.find(o => o.value === value)
 
@@ -188,26 +227,55 @@ function CustomSelect({ value, onChange, options, placeholder }: { value: string
     return () => document.removeEventListener('mousedown', handler)
   }, [])
 
+  const openListbox = () => {
+    const current = options.findIndex(o => o.value === value)
+    setHighlightIndex(current >= 0 ? current : 0)
+    setOpen(true)
+  }
+
+  const commitHighlight = () => {
+    const opt = options[highlightIndex]
+    if (opt) { onChange(opt.value); setOpen(false) }
+  }
+
+  // 键盘支持：上下移动高亮、Enter 选中、Escape 关闭（触发器上监听；选项上的 Escape 由外层兜底）
+  const handleTriggerKeyDown = (e: React.KeyboardEvent) => {
+    if (!open) {
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); openListbox() }
+      return
+    }
+    if (e.key === 'Escape') { e.preventDefault(); setOpen(false) }
+    else if (e.key === 'ArrowDown') { e.preventDefault(); setHighlightIndex(i => Math.min(options.length - 1, i + 1)) }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); setHighlightIndex(i => Math.max(0, i - 1)) }
+    else if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); commitHighlight() }
+  }
+
   return (
-    <div ref={ref} className={`relative ${open ? 'z-[5000]' : 'z-10'}`}>
+    <div ref={ref} className={`relative ${open ? 'z-[5000]' : 'z-10'}`} onKeyDown={e => { if (e.key === 'Escape') setOpen(false) }}>
       <button
         type="button"
-        onClick={() => setOpen(!open)}
+        onClick={() => (open ? setOpen(false) : openListbox())}
+        onKeyDown={handleTriggerKeyDown}
+        aria-haspopup="listbox"
+        aria-expanded={open}
         className="w-full h-11 bg-white border border-hairline-strong rounded-lg px-4 text-sm text-ink font-medium flex items-center justify-between focus:ring-2 focus:ring-ink outline-none cursor-pointer hover:border-ink/30 transition-colors"
       >
         <span className={selected ? 'text-ink' : 'text-body/50'}>{selected?.label || placeholder || 'Select...'}</span>
         <span className={`material-symbols-outlined text-body text-[18px] transition-transform duration-200 ${open ? 'rotate-180' : ''}`}>expand_more</span>
       </button>
       {open && (
-        <div className="custom-select-dropdown absolute top-full left-0 right-0 mt-1 bg-white border border-hairline rounded-lg shadow-xl z-[6000] overflow-hidden">
-          {options.map(opt => (
+        <div role="listbox" className="custom-select-dropdown absolute top-full left-0 right-0 mt-1 bg-white border border-hairline rounded-lg shadow-xl z-[6000] overflow-hidden">
+          {options.map((opt, i) => (
             <button
               key={opt.value}
               type="button"
+              role="option"
+              aria-selected={opt.value === value}
+              onMouseEnter={() => setHighlightIndex(i)}
               onClick={() => { onChange(opt.value); setOpen(false) }}
               className={`w-full px-4 py-2.5 text-sm text-left font-medium transition-colors ${
-                opt.value === value ? 'bg-canvas-soft text-ink font-bold' : 'text-body hover:bg-canvas-soft hover:text-ink'
-              }`}
+                i === highlightIndex || opt.value === value ? 'bg-canvas-soft text-ink' : 'text-body hover:bg-canvas-soft hover:text-ink'
+              } ${opt.value === value ? 'font-bold' : ''}`}
             >
               {opt.label}
             </button>
@@ -218,11 +286,12 @@ function CustomSelect({ value, onChange, options, placeholder }: { value: string
   )
 }
 
-function CustomInput({ value, onChange, placeholder, type = 'text', className = '', mono = false }: {
-  value: string; onChange: (v: string) => void; placeholder?: string; type?: string; className?: string; mono?: boolean
+function CustomInput({ value, onChange, placeholder, type = 'text', className = '', mono = false, id }: {
+  value: string; onChange: (v: string) => void; placeholder?: string; type?: string; className?: string; mono?: boolean; id?: string
 }) {
   return (
     <input
+      id={id}
       type={type}
       value={value}
       onChange={e => onChange(e.target.value)}
@@ -250,7 +319,45 @@ function CustomTextarea({ value, onChange, placeholder, className = '', rows }: 
 
 function ToastContainer({ toasts, dismiss }: { toasts: ToastItem[]; dismiss: (id: number) => void }) {
   const itemRefs = useRef<Map<number, HTMLDivElement>>(new Map())
+  const timersRef = useRef<Map<number, number>>(new Map())
 
+  const clearAutoDismiss = (id: number) => {
+    const timer = timersRef.current.get(id)
+    if (timer !== undefined) { window.clearTimeout(timer); timersRef.current.delete(id) }
+  }
+
+  const handleDismiss = (id: number) => {
+    clearAutoDismiss(id)
+    const el = itemRefs.current.get(id)
+    if (el) {
+      gsap.to(el, {
+        opacity: 0, x: 60, scale: 0.92, duration: 0.25, ease: 'power2.in',
+        onComplete: () => dismiss(id)
+      })
+    } else {
+      dismiss(id)
+    }
+  }
+
+  // 自动消失：每个 toast 只挂一个定时器，先动画再 dismiss，不在 setState updater 内做 DOM 副作用
+  useEffect(() => {
+    toasts.forEach(t => {
+      if (timersRef.current.has(t.id)) return
+      const timer = window.setTimeout(() => {
+        timersRef.current.delete(t.id)
+        handleDismiss(t.id)
+      }, 4500)
+      timersRef.current.set(t.id, timer)
+    })
+  }, [toasts])
+
+  // 卸载时清理所有未触发的自动消失定时器
+  useEffect(() => () => {
+    timersRef.current.forEach(timer => window.clearTimeout(timer))
+    timersRef.current.clear()
+  }, [])
+
+  // 入场动画（每个 toast 只播一次）
   useEffect(() => {
     toasts.forEach(t => {
       const el = itemRefs.current.get(t.id)
@@ -262,18 +369,6 @@ function ToastContainer({ toasts, dismiss }: { toasts: ToastItem[]; dismiss: (id
       )
     })
   }, [toasts])
-
-  const handleDismiss = (id: number) => {
-    const el = itemRefs.current.get(id)
-    if (el) {
-      gsap.to(el, {
-        opacity: 0, x: 60, scale: 0.92, duration: 0.25, ease: 'power2.in',
-        onComplete: () => dismiss(id)
-      })
-    } else {
-      dismiss(id)
-    }
-  }
 
   return (
     <div className="fixed bottom-6 right-6 z-[100] flex flex-col-reverse gap-3 pointer-events-none" style={{ maxWidth: '380px' }}>
@@ -316,7 +411,10 @@ export default function App() {
   const [loginSuccess, setLoginSuccess] = useState(false)
 
   const [activeTab, setActiveTab] = useState<AppTabId>('dashboard')
+  const [sidebarOpen, setSidebarOpen] = useState(false)
   const [status, setStatus] = useState<UIStatus>({ ready: false, mode: 'none', username: null, uid: null, user_type: null, error: null, accounts_count: 0 })
+  // 首次成功拉取 /ui/status 前为 false，用于首帧显示中性的"检查中"而非红色"未就绪"
+  const [statusLoaded, setStatusLoaded] = useState(false)
   const [accountsConfig, setAccountsConfig] = useState<AccountsConfig>({ accounts: [], active_uid: null })
   const [apiConfig, setApiConfig] = useState<APIConfig>({ auth_required: false, allowed_keys: [] })
   const [logs, setLogs] = useState<string[]>([])
@@ -332,10 +430,16 @@ export default function App() {
 
   const [newKey, setNewKey] = useState('')
   const [copiedKey, setCopiedKey] = useState<string | null>(null)
+  // API Key 表格默认掩码显示，按 key 记录"显示全文"状态
+  const [revealedKeys, setRevealedKeys] = useState<Set<string>>(new Set())
   const [patToken, setPatToken] = useState('')
   const [submittingPat, setSubmittingPat] = useState(false)
+  const [submittingBatch, setSubmittingBatch] = useState(false)
+  const [importingAuth, setImportingAuth] = useState(false)
+  const [loadingQuota, setLoadingQuota] = useState(false)
   const [searchAccounts, setSearchAccounts] = useState('')
-  const [isExpanded, setIsExpanded] = useState(false)
+  // Thinking 折叠按消息序号独立记录，避免展开一条历史消息时所有消息一起展开
+  const [expandedThinking, setExpandedThinking] = useState<Set<number>>(new Set())
 
   const [showBatchImport, setShowBatchImport] = useState(false)
   // 设备授权导入：idle | waiting（等待浏览器授权） | success
@@ -401,7 +505,11 @@ export default function App() {
     register: { bc: t.breadcrumb.register, title: t.title.register },
   }
 
+  // 语言切换时同步 <html lang>，供无障碍工具与翻译扩展识别
+  useEffect(() => { document.documentElement.lang = lang === 'zh' ? 'zh' : 'en' }, [lang])
+
   const loginCardRef = useRef<HTMLDivElement>(null)
+  const abortRef = useRef<AbortController | null>(null)
   const sidebarRef = useRef<HTMLElement>(null)
   const contentBodyRef = useRef<HTMLDivElement>(null)
   const logEndRef = useRef<HTMLDivElement>(null)
@@ -414,21 +522,10 @@ export default function App() {
   // Toast state
   const [toasts, setToasts] = useState<ToastItem[]>([])
   const toastIdRef = useRef(0)
+  // 只负责入队；自动消失的 DOM 动画与移除由 ToastContainer 的定时器回调处理，updater 保持纯函数
   const pushToast = useCallback((type: ToastType, title: string, message: string) => {
     const id = ++toastIdRef.current
     setToasts(prev => [...prev, { id, type, title, message }])
-    setTimeout(() => {
-      setToasts(prev => {
-        const el = document.querySelector(`[data-toast-id="${id}"]`)
-        if (el) {
-          gsap.to(el, { opacity: 0, x: 60, scale: 0.92, duration: 0.25, ease: 'power2.in' })
-          setTimeout(() => setToasts(p => p.filter(t => t.id !== id)), 260)
-        } else {
-          return prev.filter(t => t.id !== id)
-        }
-        return prev
-      })
-    }, 4500)
   }, [])
   const dismissToast = useCallback((id: number) => setToasts(prev => prev.filter(t => t.id !== id)), [])
 
@@ -440,7 +537,16 @@ export default function App() {
   }, [token])
 
   const fetchStatus = useCallback(async () => {
-    try { const resp = await authedFetch('/ui/status'); const data = await resp.json(); setStatus(data) } catch { /* */ }
+    try {
+      const resp = await authedFetch('/ui/status')
+      if (!resp.ok) return
+      const data = await resp.json()
+      // 形状守卫：异常响应（如 {"detail":...}）不进 state，避免渲染崩溃
+      if (data && typeof data === 'object' && typeof data.ready === 'boolean') {
+        setStatus(data)
+        setStatusLoaded(true)
+      }
+    } catch { /* */ }
   }, [authedFetch])
   const fetchAccounts = useCallback(async () => {
     try {
@@ -463,12 +569,24 @@ export default function App() {
     if (deviceAuthTimer.current !== null) { window.clearInterval(deviceAuthTimer.current); deviceAuthTimer.current = null }
   }, [])
 
+  // 组件卸载时停止设备授权轮询，避免登出后定时器残留、用失效 token 反复空转
+  useEffect(() => () => stopDeviceAuthPolling(), [stopDeviceAuthPolling])
+
   // 轮询设备授权结果；ok → 入库成功刷新列表，expired → 提示重试
   const pollDeviceAuth = useCallback((nonce: string) => {
     stopDeviceAuthPolling()
     deviceAuthTimer.current = window.setInterval(async () => {
       try {
         const resp = await authedFetch('/ui/device-auth/poll', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ nonce }) })
+        if (!resp.ok) {
+          // 后端异常（如保存凭据失败返回 400 {detail}）：停止轮询并提示，避免 data.status undefined 落入 pending 分支永久空转
+          stopDeviceAuthPolling()
+          setDeviceAuth({ state: 'idle', nonce: null, authUrl: null })
+          let detail = ''
+          try { const errData = await resp.json(); detail = typeof errData?.detail === 'string' ? errData.detail : '' } catch { /* */ }
+          pushToast('ERROR', lang === 'zh' ? '授权轮询失败' : 'Authorization Failed', detail || `HTTP ${resp.status}`)
+          return
+        }
         const data = await resp.json()
         if (data.status === 'ok') {
           stopDeviceAuthPolling()
@@ -503,6 +621,7 @@ export default function App() {
     try { records = JSON.parse(batchJson) } catch { pushToast('ERROR', lang === 'zh' ? 'JSON 解析失败' : 'Invalid JSON', ''); return }
     const arr = Array.isArray(records) ? records : (records as { accounts?: unknown[] }).accounts || []
     if (arr.length === 0) { pushToast('ERROR', lang === 'zh' ? '数组为空' : 'Empty array', ''); return }
+    setSubmittingBatch(true)
     try {
       const resp = await authedFetch('/ui/accounts/batch-import', {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ accounts: arr }),
@@ -512,7 +631,7 @@ export default function App() {
         pushToast('SUCCESS', lang === 'zh' ? `导入 ${data.imported} 个账号` : `Imported ${data.imported}`, lang === 'zh' ? `跳过 ${data.skipped}` : `skipped ${data.skipped}`)
         setBatchJson(''); setShowBatchImport(false); fetchAccounts()
       } else { pushToast('ERROR', lang === 'zh' ? '导入失败' : 'Import failed', data.detail || '') }
-    } catch { pushToast('ERROR', lang === 'zh' ? '导入失败' : 'Import failed', '') }
+    } catch { pushToast('ERROR', lang === 'zh' ? '导入失败' : 'Import failed', '') } finally { setSubmittingBatch(false) }
   }, [authedFetch, batchJson, lang, fetchAccounts, pushToast])
 
   const doRefreshTokens = useCallback(async () => {
@@ -527,18 +646,30 @@ export default function App() {
   }, [authedFetch, lang, pushToast])
 
   const loadQuota = useCallback(async () => {
+    setLoadingQuota(true)
     try {
       const resp = await authedFetch('/ui/accounts/quota')
       const data = await resp.json()
       setQuotaList(data.quotas || [])
-    } catch { pushToast('ERROR', lang === 'zh' ? '限额查询失败' : 'Quota query failed', '') }
+    } catch { pushToast('ERROR', lang === 'zh' ? '限额查询失败' : 'Quota query failed', '') } finally { setLoadingQuota(false) }
   }, [authedFetch, lang, pushToast])
 
   const fetchLogs = useCallback(async () => {
-    try { const resp = await authedFetch('/ui/logs'); const data = await resp.json(); setLogs(data) } catch { /* */ }
+    try {
+      const resp = await authedFetch('/ui/logs')
+      if (!resp.ok) return
+      const data = await resp.json()
+      // 形状守卫：非数组响应（如 {"detail":...}）不进 state，避免渲染时 .filter 崩溃
+      if (Array.isArray(data)) setLogs(data)
+    } catch { /* */ }
   }, [authedFetch])
   const fetchRegStatus = useCallback(async () => {
-    try { const resp = await authedFetch('/ui/registrar/status'); const data = await resp.json(); setRegStatus(data) } catch { /* */ }
+    try {
+      const resp = await authedFetch('/ui/registrar/status')
+      if (!resp.ok) return
+      const data = await resp.json()
+      if (data && typeof data === 'object' && typeof data.running === 'boolean') setRegStatus(data)
+    } catch { /* */ }
   }, [authedFetch])
   const startRegister = useCallback(async () => {
     if (regStatus?.running) return
@@ -582,7 +713,13 @@ export default function App() {
     return () => { clearInterval(si); clearInterval(li); clearInterval(ri) }
   }, [token, activeTab, fetchStatus, fetchAccounts, fetchApiConfig, fetchLogs, fetchRegStatus, regStatus?.running])
 
-  useEffect(() => { if (activeTab === 'logs') logEndRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [logs, activeTab])
+  useEffect(() => { if (activeTab === 'logs') logEndRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [activeTab])
+  // 日志更新时仅在用户本就接近底部（窗口滚动）时才跟随滚底，避免把正在上翻查看的用户拽回底部
+  useEffect(() => {
+    if (activeTab !== 'logs') return
+    const doc = document.documentElement
+    if (window.innerHeight + window.scrollY >= doc.scrollHeight - 50) logEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [logs])
   useEffect(() => { if (activeTab === 'playground') chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [chatMessages, activeTab])
 
   // GSAP animations
@@ -594,7 +731,8 @@ export default function App() {
       const cards = statCardsRef.current.querySelectorAll('.stat-card')
       gsap.fromTo(cards, { opacity: 0, y: 30, scale: 0.95 }, { opacity: 1, y: 0, scale: 1, duration: 0.5, stagger: 0.1, ease: 'power2.out' })
     }
-  }, [activeTab, token, status])
+    // 不依赖 status：/ui/status 每 6s 轮询产生新对象，若入 deps 会让入场动画每 6s 重播闪烁
+  }, [activeTab, token])
   useEffect(() => {
     if (token && activeTab === 'dashboard' && notifListRef.current) {
       const items = notifListRef.current.querySelectorAll('li')
@@ -630,14 +768,27 @@ export default function App() {
         }
       } else {
         if (loginCardRef.current) gsap.to(loginCardRef.current, { x: 10, duration: 0.04, repeat: 7, yoyo: true, onComplete: () => gsap.set(loginCardRef.current!, { x: 0 }) })
-        setAuthError('Invalid gateway access token')
+        // 展示后端真实错误（如 429 限速），解析失败再用兜底文案
+        let detail = ''
+        try { const errData = await resp.json(); detail = typeof errData?.detail === 'string' ? errData.detail : '' } catch { /* */ }
+        setAuthError(detail || 'Invalid gateway access token')
       }
     } catch (err: any) { setAuthError(`Connection failed: ${err.message}`) } finally { setVerifying(false) }
   }
 
-  const handleLogout = () => { localStorage.removeItem('gateway_token'); setToken(null); setLoginSuccess(false) }
+  const handleLogout = () => {
+    stopDeviceAuthPolling()
+    localStorage.removeItem('gateway_token')
+    setToken(null)
+    setLoginSuccess(false)
+    setStatusLoaded(false)
+    setDeviceAuth({ state: 'idle', nonce: null, authUrl: null })
+    setToasts([])
+  }
 
   const handleImportAuth = async () => {
+    if (importingAuth) return
+    setImportingAuth(true)
     try {
       const resp = await authedFetch('/ui/accounts/import', { method: 'POST' })
       if (!resp.ok) { const err = await resp.json(); throw new Error(err.detail || 'Import failed') }
@@ -646,7 +797,7 @@ export default function App() {
       fetchAccounts(); fetchStatus(); fetchLogs()
     } catch (err: any) {
       pushToast('ERROR', msg.importFailed, err.message)
-    }
+    } finally { setImportingAuth(false) }
   }
 
   const handleSavePat = async () => {
@@ -725,17 +876,29 @@ export default function App() {
     if (ok) pushToast('SUCCESS', lang === 'zh' ? 'Key 已删除' : 'Key Removed', msg.keyRemoved)
   }
 
-  const handleCopyKey = (key: string) => {
-    navigator.clipboard.writeText(key)
+  const handleCopyKey = async (key: string) => {
+    const ok = await copyTextToClipboard(key)
+    if (!ok) {
+      pushToast('ERROR', lang === 'zh' ? '复制失败' : 'Copy Failed', lang === 'zh' ? '当前环境不支持自动复制，请手动选择复制' : 'Automatic copy is not available here. Please copy manually.')
+      return
+    }
     setCopiedKey(key)
     pushToast('INFO', lang === 'zh' ? '已复制' : 'Copied', msg.copied)
     setTimeout(() => setCopiedKey(null), 2000)
   }
 
+  const toggleKeyReveal = (key: string) => setRevealedKeys(prev => {
+    const next = new Set(prev)
+    if (next.has(key)) next.delete(key); else next.add(key)
+    return next
+  })
+
   const handleRefreshStatus = () => {
     fetchAccounts(); fetchStatus(); fetchLogs()
     pushToast('INFO', msg.refreshed, lang === 'zh' ? '账号池和系统状态已更新' : 'Account pool and system status updated')
   }
+
+  const handleStopChat = () => { abortRef.current?.abort() }
 
   const handleSendChat = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -755,8 +918,11 @@ export default function App() {
       { role: 'user', content: trimmed },
     ]
 
+    const controller = new AbortController()
+    abortRef.current = controller
+
     try {
-      const response = await fetch('/v1/chat/completions', { method: 'POST', headers, body: JSON.stringify({ model, messages: apiMessages, stream }) })
+      const response = await fetch('/v1/chat/completions', { method: 'POST', headers, body: JSON.stringify({ model, messages: apiMessages, stream }), signal: controller.signal })
       if (!response.ok) {
         const errData = await response.json()
         const errMsg = errData.detail || errData.error?.message || response.statusText
@@ -790,24 +956,44 @@ export default function App() {
         pushToast('SUCCESS', msg.responseDone, lang === 'zh' ? '已收到 AI 响应' : 'AI response received successfully')
       }
     } catch (err: any) {
-      setChatMessages(prev => { const u = [...prev]; u[u.length - 1] = { role: 'assistant', content: `Connection error: ${err.message}` }; return u })
-      pushToast('ERROR', msg.connectionError, err.message)
-    } finally { setGenerating(false) }
+      if (err?.name === 'AbortError') {
+        // 用户主动停止：保留已生成内容，仅在还没有任何输出时给出占位说明
+        setChatMessages(prev => {
+          const u = [...prev]
+          const last = u[u.length - 1]
+          if (last && last.role === 'assistant' && !last.content.trim()) {
+            u[u.length - 1] = { role: 'assistant', content: lang === 'zh' ? '（已停止生成）' : '(Generation stopped)' }
+          }
+          return u
+        })
+        pushToast('INFO', lang === 'zh' ? '已停止生成' : 'Generation Stopped', lang === 'zh' ? '已保留已生成的内容' : 'Kept the content generated so far')
+      } else {
+        setChatMessages(prev => { const u = [...prev]; u[u.length - 1] = { role: 'assistant', content: `Connection error: ${err.message}` }; return u })
+        pushToast('ERROR', msg.connectionError, err.message)
+      }
+    } finally { abortRef.current = null; setGenerating(false) }
   }
 
-  const renderMessageContent = (text: string) => {
+  const toggleThinking = (idx: number) => setExpandedThinking(prev => {
+    const next = new Set(prev)
+    if (next.has(idx)) next.delete(idx); else next.add(idx)
+    return next
+  })
+
+  const renderMessageContent = (text: string, msgIndex: number) => {
     const thinkingRegex = /<thinking>([\s\S]*?)(?:<\/thinking>|$)/
     const match = text.match(thinkingRegex)
     if (match) {
       const thinking = match[1]; const response = text.replace(thinkingRegex, '').trim()
+      const expanded = expandedThinking.has(msgIndex)
       return (
         <div className="space-y-3">
           <div className="bg-canvas-soft border border-hairline rounded-xl overflow-hidden">
-            <button onClick={() => setIsExpanded(!isExpanded)} className="w-full flex items-center gap-2 px-4 py-2.5 text-xs font-bold text-body hover:text-ink transition-colors">
+            <button onClick={() => toggleThinking(msgIndex)} className="w-full flex items-center gap-2 px-4 py-2.5 text-xs font-bold text-body hover:text-ink transition-colors">
               <span className="material-symbols-outlined text-base">psychology</span>Thinking Process
-              <span className={`material-symbols-outlined transition-transform ${isExpanded ? 'rotate-180' : ''}`}>expand_more</span>
+              <span className={`material-symbols-outlined transition-transform ${expanded ? 'rotate-180' : ''}`}>expand_more</span>
             </button>
-            {isExpanded && <div className="px-4 py-3 text-xs text-body italic leading-relaxed border-t border-hairline opacity-70 whitespace-pre-wrap">{thinking}</div>}
+            {expanded && <div className="px-4 py-3 text-xs text-body italic leading-relaxed border-t border-hairline opacity-70 whitespace-pre-wrap">{thinking}</div>}
           </div>
           {response && <div className="prose prose-stone max-w-none text-sm leading-relaxed"><ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]}>{response}</ReactMarkdown></div>}
         </div>
@@ -866,8 +1052,8 @@ export default function App() {
             </div>
             <form className="space-y-6" onSubmit={handleVerifyToken}>
               <div className="space-y-2">
-                <label className="font-bold text-ink text-[16px]">{lang === 'zh' ? '网关访问密钥' : 'Gateway Access Token'}</label>
-                <CustomInput type="password" value={inputToken} onChange={setInputToken} placeholder={lang === 'zh' ? '输入你的安全密钥...' : 'Enter your security token...'} />
+                <label htmlFor="gateway-token" className="font-bold text-ink text-[16px]">{lang === 'zh' ? '网关访问密钥' : 'Gateway Access Token'}</label>
+                <CustomInput id="gateway-token" type="password" value={inputToken} onChange={setInputToken} placeholder={lang === 'zh' ? '输入你的安全密钥...' : 'Enter your security token...'} />
               </div>
               {authError && (
                 <div className="flex items-center gap-2 p-3.5 bg-red-50 border border-red-200 text-red-700 rounded-lg text-xs font-semibold">
@@ -909,14 +1095,18 @@ export default function App() {
       <div ref={el => { orbRefs.current[2] = el }} className="orb bg-mint w-[500px] h-[500px] -top-24 -right-24"></div>
       <div ref={el => { orbRefs.current[3] = el }} className="orb bg-peach w-[400px] h-[400px] bottom-0 left-[20%]"></div>
 
-      <aside ref={sidebarRef} className="fixed left-0 top-0 h-screen w-[280px] bg-surface border-r border-hairline flex flex-col p-6 z-50">
+      {sidebarOpen && (
+        <div className="fixed inset-0 bg-black/30 z-40 lg:hidden" onClick={() => setSidebarOpen(false)} aria-hidden="true"></div>
+      )}
+
+      <aside ref={sidebarRef} className={`fixed left-0 top-0 h-screen w-[280px] bg-surface border-r border-hairline flex flex-col p-6 z-50 transition-transform duration-300 lg:translate-x-0 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
         <div className="flex items-center gap-3 mb-8">
           <div className="w-10 h-10 bg-ink rounded-lg flex items-center justify-center"><span className="material-symbols-outlined text-white" style={{ fontVariationSettings: "'FILL' 1" }}>gate</span></div>
           <div><h1 className="font-display-sm text-ink leading-none">QoderGate</h1><p className="text-[10px] uppercase tracking-widest text-body opacity-60">{lang === 'zh' ? '管理控制台' : 'Management Console'}</p></div>
         </div>
         <nav className="flex-1 space-y-1">
           {NAV_ITEMS.map((item) => (
-            <button key={item.id} onClick={() => setActiveTab(item.id)} className={`flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors font-medium w-full text-left ${activeTab === item.id ? 'bg-canvas-soft text-ink font-bold' : 'text-body hover:bg-canvas-soft'}`}>
+            <button key={item.id} onClick={() => { setActiveTab(item.id); setSidebarOpen(false) }} className={`flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors font-medium w-full text-left ${activeTab === item.id ? 'bg-canvas-soft text-ink font-bold' : 'text-body hover:bg-canvas-soft'}`}>
               <span className="material-symbols-outlined" style={{ fontVariationSettings: activeTab === item.id ? "'FILL' 1" : "" }}>{item.icon}</span>{navLabels[item.id]}
             </button>
           ))}
@@ -932,32 +1122,36 @@ export default function App() {
         </div>
       </aside>
 
-      <main className="ml-[280px] min-h-screen flex flex-col relative z-10">
-        <header className="flex justify-between items-center h-24 px-8 w-full border-b border-hairline bg-transparent sticky top-0 z-40 backdrop-blur-sm">
-          <div>
-            <span className="text-[12px] font-semibold text-body uppercase opacity-60 tracking-[0.96px]">{bc}</span>
-            <h2 className="font-display-lg text-ink">{title}</h2>
+      <main className="lg:ml-[280px] min-h-screen flex flex-col relative z-10">
+        <header className="flex justify-between items-center h-24 px-4 lg:px-8 w-full border-b border-hairline bg-transparent sticky top-0 z-40 backdrop-blur-sm">
+          <div className="flex items-center gap-2 min-w-0">
+            <button type="button" onClick={() => setSidebarOpen(true)} aria-label={lang === 'zh' ? '打开导航菜单' : 'Open navigation menu'} className="lg:hidden p-2 -ml-2 text-body hover:text-ink transition-colors">
+              <span className="material-symbols-outlined">menu</span>
+            </button>
+            <div className="min-w-0">
+              <span className="text-[12px] font-semibold text-body uppercase opacity-60 tracking-[0.96px]">{bc}</span>
+              <h2 className="font-display-lg text-ink">{title}</h2>
+            </div>
           </div>
           <div className="flex items-center gap-6">
             <div className="flex items-center gap-8 text-body text-[16px]">
               <a href="/documents" className="hover:text-ink transition-colors cursor-pointer">{t.common.docs}</a>
               <button onClick={() => switchLang(lang === 'zh' ? 'en' : 'zh')} className="hover:text-ink transition-colors cursor-pointer">{lang === 'zh' ? 'English' : '中文'}</button>
-              <a className="hover:text-ink transition-colors cursor-pointer">{t.common.support}</a>
+              <a href="https://github.com/bzym2/QoderGateway" target="_blank" rel="noreferrer" className="hover:text-ink transition-colors cursor-pointer">{t.common.support}</a>
             </div>
             <div className="flex items-center gap-4">
-              <button className="p-2 text-body hover:text-ink transition-colors"><span className="material-symbols-outlined">notifications</span></button>
               <div className="w-10 h-10 rounded-full bg-hairline flex items-center justify-center border border-hairline-strong text-xs font-bold text-ink">{status.username ? status.username[0].toUpperCase() : 'Q'}</div>
             </div>
           </div>
         </header>
 
-        <div ref={contentBodyRef} className="flex-1 p-8 w-full">
+        <div ref={contentBodyRef} className="flex-1 p-4 lg:p-8 w-full">
           {/* ─── DASHBOARD ─── */}
           {activeTab === 'dashboard' && (
             <div className="space-y-8">
               <section ref={statCardsRef} className="grid grid-cols-1 md:grid-cols-4 gap-6">
                 {[
-                  { label: t.dashboard.serviceStatus, value: status.ready ? t.common.healthy : t.common.offline, detail: status.ready ? t.dashboard.allGatewaysActive : t.dashboard.noActiveSession, dot: status.ready ? 'bg-mint' : 'bg-red-400' },
+                  { label: t.dashboard.serviceStatus, value: status.ready ? t.common.healthy : (statusLoaded ? t.common.offline : t.common.checking), detail: status.ready ? t.dashboard.allGatewaysActive : (statusLoaded ? t.dashboard.noActiveSession : (lang === 'zh' ? '正在检查网关状态...' : 'Checking gateway status...')), dot: status.ready ? 'bg-mint' : (statusLoaded ? 'bg-red-400' : 'bg-neutral-400') },
                   { label: t.dashboard.accountPool, value: String(status.accounts_count || 0), detail: t.dashboard.activeSessions },
                   { label: t.dashboard.apiAuth, value: apiConfig.auth_required ? (lang === 'zh' ? '已开启' : 'Enabled') : (lang === 'zh' ? '未开启' : 'Disabled'), detail: apiConfig.auth_required ? `${apiConfig.allowed_keys.length} keys active` : t.dashboard.openAccess },
                   { label: t.dashboard.activeUser, value: status.username || (lang === 'zh' ? '无' : 'None'), detail: status.user_type || 'N/A' }
@@ -973,7 +1167,7 @@ export default function App() {
               <section className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-stretch">
                 <div className="lg:col-span-2 glass-card p-8 rounded-2xl flex flex-col">
                   <div className="text-[12px] font-semibold text-body mb-2 uppercase tracking-widest">{t.dashboard.systemBriefing}</div>
-                  <div className="font-display-md text-ink mb-4 max-w-lg">{status.ready ? t.dashboard.readyBrief.replace('{count}', String(status.accounts_count)) : t.dashboard.notReadyBrief}</div>
+                  <div className="font-display-md text-ink mb-4 max-w-lg">{status.ready ? t.dashboard.readyBrief.replace('{count}', String(status.accounts_count)) : (statusLoaded ? t.dashboard.notReadyBrief : (lang === 'zh' ? '正在检查网关状态...' : 'Checking gateway status...'))}</div>
                   <div className="mt-auto bg-ink/5 p-4 rounded-lg border border-hairline-strong" ref={terminalRef}>
                     <code className="text-sm font-mono text-ink">
                       <span className="text-primary font-bold">system@qodergate:~$</span> status --check --all<br />
@@ -1009,7 +1203,7 @@ export default function App() {
                     <button onClick={handleSavePat} disabled={submittingPat} className="bg-ink text-white font-bold px-5 py-3 rounded-lg text-sm transition-all hover:bg-primary disabled:opacity-50">
                       {submittingPat ? t.dashboard.saving : t.dashboard.addPat}
                     </button>
-                    <button onClick={handleImportAuth} className="flex items-center gap-2 px-4 py-3 text-ink hover:bg-canvas-soft border border-hairline font-semibold rounded-lg text-sm transition-all">
+                    <button onClick={handleImportAuth} disabled={importingAuth} className="flex items-center gap-2 px-4 py-3 text-ink hover:bg-canvas-soft border border-hairline font-semibold rounded-lg text-sm transition-all disabled:opacity-40">
                       <span className="material-symbols-outlined text-[18px]">refresh</span>{t.dashboard.autoImport}
                     </button>
                   </div>
@@ -1033,13 +1227,13 @@ export default function App() {
                   <button onClick={doRefreshTokens} disabled={refreshingTokens} className="flex items-center gap-2 px-4 py-2.5 text-body hover:text-ink transition-colors font-bold text-sm disabled:opacity-40">
                     <span className="material-symbols-outlined text-[18px]">autorenew</span>{refreshingTokens ? (lang === 'zh' ? '刷新中...' : 'Refreshing...') : (lang === 'zh' ? '刷新 Token' : 'Refresh Tokens')}
                   </button>
-                  <button onClick={() => { loadQuota(); setShowBatchImport(false) }} className={`flex items-center gap-2 px-4 py-2.5 rounded-lg transition-all font-bold text-sm border ${quotaList ? 'bg-ink text-white border-ink' : 'text-body hover:text-ink border-hairline'}`}>
-                    <span className="material-symbols-outlined text-[18px]">data_usage</span>{lang === 'zh' ? '查看限额' : 'Quota'}
+                  <button onClick={() => { loadQuota(); setShowBatchImport(false) }} disabled={loadingQuota} className={`flex items-center gap-2 px-4 py-2.5 rounded-lg transition-all font-bold text-sm border disabled:opacity-40 ${quotaList ? 'bg-ink text-white border-ink' : 'text-body hover:text-ink border-hairline'}`}>
+                    <span className="material-symbols-outlined text-[18px]">data_usage</span>{loadingQuota ? (lang === 'zh' ? '查询中...' : 'Loading...') : (lang === 'zh' ? '查看限额' : 'Quota')}
                   </button>
                   <button onClick={handleRefreshStatus} className="flex items-center gap-2 px-4 py-2.5 text-body hover:text-ink transition-colors font-bold text-sm">
                     <span className="material-symbols-outlined text-[18px]">refresh</span>{t.accounts.refreshStatus}
                   </button>
-                  <button onClick={handleImportAuth} className="flex items-center gap-2 px-6 py-2.5 bg-ink text-white rounded-lg hover:bg-neutral-800 transition-all font-bold text-sm shadow-md">
+                  <button onClick={handleImportAuth} disabled={importingAuth} className="flex items-center gap-2 px-6 py-2.5 bg-ink text-white rounded-lg hover:bg-neutral-800 transition-all font-bold text-sm shadow-md disabled:opacity-50">
                     <span className="material-symbols-outlined text-[18px]">add</span>{t.accounts.importAccounts}
                   </button>
                 </div>
@@ -1072,7 +1266,7 @@ export default function App() {
                     className="w-full p-4 rounded-xl border border-hairline bg-white/60 font-mono text-[13px] text-ink outline-none focus:border-ink/30 transition-colors"
                   />
                   <div className="mt-3 flex gap-3">
-                    <button onClick={doBatchImport} className="bg-ink text-white font-bold px-6 py-2.5 rounded-lg text-sm transition-all hover:bg-neutral-800">{lang === 'zh' ? '导入' : 'Import'}</button>
+                    <button onClick={doBatchImport} disabled={submittingBatch} className="bg-ink text-white font-bold px-6 py-2.5 rounded-lg text-sm transition-all hover:bg-neutral-800 disabled:opacity-50">{submittingBatch ? (lang === 'zh' ? '导入中...' : 'Importing...') : (lang === 'zh' ? '导入' : 'Import')}</button>
                     <button onClick={() => { setBatchJson(''); setShowBatchImport(false) }} className="px-4 py-2.5 text-body border border-hairline rounded-lg text-sm font-bold hover:text-ink">{lang === 'zh' ? '取消' : 'Cancel'}</button>
                   </div>
                 </section>
@@ -1083,7 +1277,7 @@ export default function App() {
                   <div className="px-6 py-4 border-b border-hairline flex items-center gap-2">
                     <span className="material-symbols-outlined text-[18px] text-body">data_usage</span>
                     <span className="text-sm font-semibold text-ink">{lang === 'zh' ? '账号限额（credits）' : 'Account Quota (credits)'}</span>
-                    <button onClick={loadQuota} className="ml-auto text-[12px] text-body hover:text-ink flex items-center gap-1"><span className="material-symbols-outlined text-[14px]">refresh</span>{lang === 'zh' ? '刷新' : 'Refresh'}</button>
+                    <button onClick={loadQuota} disabled={loadingQuota} className="ml-auto text-[12px] text-body hover:text-ink flex items-center gap-1 disabled:opacity-40"><span className="material-symbols-outlined text-[14px]">refresh</span>{lang === 'zh' ? '刷新' : 'Refresh'}</button>
                   </div>
                   <div className="overflow-x-auto">
                     <table className="w-full text-left">
@@ -1095,15 +1289,17 @@ export default function App() {
                       <tbody className="divide-y divide-hairline">
                         {quotaList.map((q, i) => {
                           const uq = q.quota?.userQuota || {}
+                          // percentage 可能是 0-1 或 0-100（透传上游），统一归一化后再判断阈值/画进度条
+                          const pct = normalizeQuotaPct(uq.percentage)
                           return (
                             <tr key={i} className="hover:bg-canvas-soft transition-colors">
                               <td className="px-6 py-4 font-semibold text-ink">{q.name || q.uid.slice(0, 12)}</td>
                               <td className="px-6 py-4 font-mono text-xs text-body">{uq.total ?? '--'}</td>
                               <td className="px-6 py-4 font-mono text-xs text-body">{uq.used ?? '--'}</td>
-                              <td className={`px-6 py-4 font-mono text-xs ${uq.percentage > 0.8 ? 'text-red-600 font-bold' : 'text-body'}`}>{uq.remaining ?? '--'}</td>
+                              <td className={`px-6 py-4 font-mono text-xs ${pct > 0.8 ? 'text-red-600 font-bold' : 'text-body'}`}>{uq.remaining ?? '--'}</td>
                               <td className="px-6 py-4">
                                 <div className="w-24 h-1.5 bg-hairline-strong rounded-full overflow-hidden">
-                                  <div className={`h-full ${(uq.percentage || 0) > 0.8 ? 'bg-red-500' : 'bg-mint'}`} style={{ width: `${Math.min(100, (uq.percentage || 0) * 100)}%` }} />
+                                  <div className={`h-full ${pct > 0.8 ? 'bg-red-500' : 'bg-mint'}`} style={{ width: `${Math.min(100, pct * 100)}%` }} />
                                 </div>
                               </td>
                             </tr>
@@ -1150,14 +1346,20 @@ export default function App() {
                               </td>
                               <td className="px-6 py-5 text-xs font-mono text-body">{acc.next_reset_at ? new Date(acc.next_reset_at).toLocaleDateString() : '--'}</td>
                               <td className="px-6 py-5 text-center">
-                                <button onClick={() => handleToggleAccount(acc.uid, !acc.enabled)} className={`w-11 h-6 rounded-full p-0.5 transition-colors relative ${acc.enabled ? 'bg-ink' : 'bg-hairline-strong'}`}>
+                                <button
+                                  onClick={() => handleToggleAccount(acc.uid, !acc.enabled)}
+                                  role="switch"
+                                  aria-checked={acc.enabled}
+                                  aria-label={lang === 'zh' ? `${acc.enabled ? '禁用' : '启用'}账号 ${acc.name}` : `${acc.enabled ? 'Disable' : 'Enable'} account ${acc.name}`}
+                                  className={`w-11 h-6 rounded-full p-0.5 transition-colors relative ${acc.enabled ? 'bg-ink' : 'bg-hairline-strong'}`}
+                                >
                                   <div className={`w-5 h-5 bg-white rounded-full transition-transform duration-200 ${acc.enabled ? 'translate-x-5' : 'translate-x-0'}`}></div>
                                 </button>
                               </td>
                               <td className="px-6 py-5 text-right">
-                                <div className="flex items-center justify-end gap-4 opacity-0 group-hover:opacity-100 transition-opacity">
-                                  <button onClick={() => handleSelectAccount(acc.uid)} disabled={isActive || !acc.enabled} className="text-body hover:text-ink disabled:opacity-30" title="Activate"><span className="material-symbols-outlined">play_circle</span></button>
-                                  <button onClick={() => handleDeleteAccount(acc.uid)} className="text-body hover:text-red-600" title="Delete"><span className="material-symbols-outlined">delete</span></button>
+                                <div className="flex items-center justify-end gap-4 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
+                                  <button onClick={() => handleSelectAccount(acc.uid)} disabled={isActive || !acc.enabled} className="text-body hover:text-ink disabled:opacity-30" title="Activate" aria-label={lang === 'zh' ? `激活账号 ${acc.name}` : `Activate account ${acc.name}`}><span className="material-symbols-outlined">play_circle</span></button>
+                                  <button onClick={() => handleDeleteAccount(acc.uid)} className="text-body hover:text-red-600" title="Delete" aria-label={lang === 'zh' ? `删除账号 ${acc.name}` : `Delete account ${acc.name}`}><span className="material-symbols-outlined">delete</span></button>
                                 </div>
                               </td>
                             </tr>
@@ -1175,8 +1377,8 @@ export default function App() {
 
           {/* ─── AI PLAYGROUND ─── */}
           {activeTab === 'playground' && (
-            <div className="flex gap-8 h-[calc(100vh-14rem)]">
-              <section className="w-[320px] flex flex-col gap-6 overflow-y-auto pr-4">
+            <div className="flex flex-col lg:flex-row gap-4 lg:gap-8 lg:h-[calc(100vh-14rem)]">
+              <section className="w-full lg:w-[320px] shrink-0 flex flex-col gap-6 lg:overflow-y-auto lg:pr-4">
                 <div className="space-y-3">
                   <label className="font-bold text-ink">{t.playground.modelConfig}</label>
                   <CustomInput value={model} onChange={setModel} placeholder="e.g. lite, pro" />
@@ -1205,18 +1407,24 @@ export default function App() {
                             <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
                             {t.playground.waiting}
                           </div>
-                        ) : renderMessageContent(msg.content)}
+                        ) : renderMessageContent(msg.content, idx)}
                       </div>
                     </div>
                   ))}
                   <div ref={chatEndRef} />
                 </div>
-                <form onSubmit={handleSendChat} className="p-8 border-t border-hairline bg-white/50">
+                <form onSubmit={handleSendChat} className="p-4 lg:p-8 border-t border-hairline bg-white/50">
                   <div className="flex items-center gap-3">
                     <CustomTextarea value={chatInput} onChange={setChatInput} placeholder={t.playground.ask} className="flex-1" />
-                    <button type="submit" disabled={generating || !chatInput.trim()} className="h-11 px-4 bg-ink text-white rounded-xl flex items-center gap-2 hover:bg-neutral-800 transition-all active:scale-95 shadow-md disabled:opacity-50 shrink-0">
-                      <span className="font-bold text-sm">{t.playground.send}</span><span className="material-symbols-outlined text-sm">send</span>
-                    </button>
+                    {generating ? (
+                      <button type="button" onClick={handleStopChat} className="h-11 px-4 bg-white border border-hairline-strong text-ink rounded-xl flex items-center gap-2 hover:bg-canvas-soft transition-all active:scale-95 shadow-md shrink-0">
+                        <span className="material-symbols-outlined text-sm">stop_circle</span><span className="font-bold text-sm">{lang === 'zh' ? '停止生成' : 'Stop'}</span>
+                      </button>
+                    ) : (
+                      <button type="submit" disabled={!chatInput.trim()} className="h-11 px-4 bg-ink text-white rounded-xl flex items-center gap-2 hover:bg-neutral-800 transition-all active:scale-95 shadow-md disabled:opacity-50 shrink-0">
+                        <span className="font-bold text-sm">{t.playground.send}</span><span className="material-symbols-outlined text-sm">send</span>
+                      </button>
+                    )}
                   </div>
                 </form>
               </section>
@@ -1239,7 +1447,13 @@ export default function App() {
                     <div><h3 className="font-bold text-ink text-lg mb-2">{t.api.gatewayAuth}</h3><p className="text-body text-sm">{t.api.gatewayAuthDesc}</p></div>
                     <div className="flex items-center justify-between pt-6 border-t border-hairline mt-auto">
                       <span className="text-[10px] font-bold text-body uppercase tracking-widest">{t.api.systemStatus}</span>
-                      <button className={`w-11 h-6 rounded-full p-0.5 transition-colors relative ${apiConfig.auth_required ? 'bg-ink' : 'bg-hairline-strong'}`} onClick={handleToggleAuth}>
+                      <button
+                        role="switch"
+                        aria-checked={apiConfig.auth_required}
+                        aria-label={t.api.gatewayAuth}
+                        className={`w-11 h-6 rounded-full p-0.5 transition-colors relative ${apiConfig.auth_required ? 'bg-ink' : 'bg-hairline-strong'}`}
+                        onClick={handleToggleAuth}
+                      >
                         <div className={`w-5 h-5 bg-white rounded-full transition-transform duration-200 ${apiConfig.auth_required ? 'translate-x-5' : 'translate-x-0'}`}></div>
                       </button>
                     </div>
@@ -1265,11 +1479,22 @@ export default function App() {
                           <tr><td colSpan={2} className="py-6 text-center text-xs text-body font-medium">{t.api.noKeys}</td></tr>
                         ) : apiConfig.allowed_keys.map((key) => (
                           <tr key={key} className="hover:bg-canvas-soft/30 transition-colors">
-                            <td className="px-6 py-5 font-mono text-xs tracking-wider text-body opacity-80 select-all break-all">{key}</td>
+                            <td className="px-6 py-5 font-mono text-xs tracking-wider text-body opacity-80 select-all break-all">
+                              {/* 默认掩码显示，避免与同页"安全建议"矛盾；眼睛按钮按 key 切换显示全文 */}
+                              {revealedKeys.has(key) ? key : maskApiKey(key)}
+                            </td>
                             <td className="px-6 py-5 text-right">
                               <div className="flex justify-end gap-2">
-                                <button onClick={() => handleCopyKey(key)} className="p-1.5 text-body hover:text-ink" title="Copy"><span className="material-symbols-outlined text-[18px]">{copiedKey === key ? 'check_circle' : 'content_copy'}</span></button>
-                                <button onClick={() => handleDeleteKey(key)} className="p-1.5 text-red-400 hover:text-red-600" title="Delete"><span className="material-symbols-outlined text-[18px]">block</span></button>
+                                <button
+                                  onClick={() => toggleKeyReveal(key)}
+                                  className="p-1.5 text-body hover:text-ink"
+                                  title={revealedKeys.has(key) ? 'Hide' : 'Show'}
+                                  aria-label={lang === 'zh' ? (revealedKeys.has(key) ? '隐藏 API Key' : '显示 API Key') : (revealedKeys.has(key) ? 'Hide API key' : 'Show API key')}
+                                >
+                                  <span className="material-symbols-outlined text-[18px]">{revealedKeys.has(key) ? 'visibility_off' : 'visibility'}</span>
+                                </button>
+                                <button onClick={() => handleCopyKey(key)} className="p-1.5 text-body hover:text-ink" title="Copy" aria-label={lang === 'zh' ? '复制 API Key' : 'Copy API key'}><span className="material-symbols-outlined text-[18px]">{copiedKey === key ? 'check_circle' : 'content_copy'}</span></button>
+                                <button onClick={() => handleDeleteKey(key)} className="p-1.5 text-red-400 hover:text-red-600" title="Delete" aria-label={lang === 'zh' ? '删除 API Key' : 'Delete API key'}><span className="material-symbols-outlined text-[18px]">block</span></button>
                               </div>
                             </td>
                           </tr>
@@ -1284,7 +1509,6 @@ export default function App() {
                 <div className="relative z-10 max-w-xl">
                   <h2 className="font-display-sm mb-4">{t.api.bestPractices}</h2>
                   <p className="text-white/70 font-medium leading-relaxed text-sm">{t.api.bestPracticesDesc}</p>
-                  <button className="mt-8 border border-white/20 px-6 py-2.5 rounded-xl hover:bg-white/10 transition-all font-bold text-xs uppercase tracking-wider">{t.api.securityPolicy}</button>
                 </div>
                 <div className="hidden lg:block opacity-20"><span className="material-symbols-outlined" style={{ fontSize: '120px', fontVariationSettings: "'FILL' 1" }}>shield</span></div>
               </section>

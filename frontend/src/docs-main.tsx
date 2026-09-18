@@ -47,10 +47,37 @@ function scrollToHeading(id: string) {
   history.replaceState(null, '', `#${id}`)
 }
 
+// 剪贴板帮助函数：优先 async Clipboard API，非安全上下文（如通过 LAN IP + http 访问时 navigator.clipboard 缺失）回退 execCommand
+async function copyTextToClipboard(text: string): Promise<boolean> {
+  try {
+    if (window.isSecureContext && navigator.clipboard) {
+      await navigator.clipboard.writeText(text)
+      return true
+    }
+  } catch { /* 回退到 execCommand */ }
+  try {
+    const ta = document.createElement('textarea')
+    ta.value = text
+    ta.setAttribute('readonly', '')
+    ta.style.position = 'fixed'
+    ta.style.top = '-9999px'
+    ta.style.opacity = '0'
+    document.body.appendChild(ta)
+    ta.select()
+    const ok = document.execCommand('copy')
+    ta.remove()
+    return ok
+  } catch {
+    return false
+  }
+}
+
 function DocsApp() {
   const [activeDocId, setActiveDocId] = useState('quickstart')
   const [query, setQuery] = useState('')
-  const [copied, setCopied] = useState(false)
+  // copied 状态按代码块内容为粒度记录，避免所有代码块共享一个状态
+  const [copiedState, setCopiedState] = useState<{ key: string; ok: boolean } | null>(null)
+  const copyTimerRef = useRef<number | null>(null)
   const [lang, setLang] = useState<Lang>(() => {
     const stored = localStorage.getItem('qodergate_lang')
     if (stored === 'en' || stored === 'zh') return stored
@@ -106,11 +133,16 @@ function DocsApp() {
     return () => window.removeEventListener('keydown', handler)
   }, [])
 
-  const copyText = (text: string) => {
-    navigator.clipboard.writeText(text.replace(/\n$/, ''))
-    setCopied(true)
-    setTimeout(() => setCopied(false), 1400)
+  const handleCopyCode = async (text: string) => {
+    const ok = await copyTextToClipboard(text.replace(/\n$/, ''))
+    setCopiedState({ key: text, ok })
+    if (copyTimerRef.current !== null) window.clearTimeout(copyTimerRef.current)
+    copyTimerRef.current = window.setTimeout(() => setCopiedState(null), 1400)
   }
+
+  useEffect(() => () => {
+    if (copyTimerRef.current !== null) window.clearTimeout(copyTimerRef.current)
+  }, [])
 
   return (
     <div className="docs-shell min-h-screen">
@@ -167,9 +199,12 @@ function DocsApp() {
                 h3({ children }) { return <h3 id={slugify(children)}>{children}</h3> },
                 pre({ children }) {
                   const text = String((children as any)?.props?.children || '')
+                  const copied = copiedState?.key === text
                   return (
                     <div className="code-card">
-                      <button onClick={() => copyText(text)}>{copied ? 'Copied' : 'Copy'}</button>
+                      <button onClick={() => handleCopyCode(text)}>
+                        {copied ? (copiedState?.ok ? (lang === 'zh' ? '已复制' : 'Copied') : (lang === 'zh' ? '复制失败' : 'Copy failed')) : (lang === 'zh' ? '复制' : 'Copy')}
+                      </button>
                       <pre>{children}</pre>
                     </div>
                   )

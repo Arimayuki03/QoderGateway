@@ -55,7 +55,7 @@ function Landing() {
           <span className="w-2 h-2 bg-mint rounded-full animate-pulse"></span>
           {lang === 'zh' ? 'OpenAI 兼容的 Qoder 网关' : 'OpenAI-compatible Qoder gateway'}
         </div>
-        <h1 className="font-display-lg text-ink max-w-4xl" style={{ fontSize: 72, lineHeight: 0.98 }}>
+        <h1 className="font-display-lg text-ink max-w-4xl" style={{ fontSize: 'clamp(2.5rem, 8vw, 4.5rem)', lineHeight: 0.98 }}>
           {lang === 'zh' ? '把多个 Qoder 账号统一转换成 OpenAI 兼容接口。' : 'Turn multiple Qoder accounts into one OpenAI-compatible API.'}
         </h1>
         <p className="mt-7 text-lg text-body max-w-2xl leading-8">
