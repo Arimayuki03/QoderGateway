@@ -1,12 +1,9 @@
 import base64
-import hashlib
 import json
-import time
 import uuid
 from dataclasses import dataclass
 from typing import Any
 from pathlib import Path
-from urllib.parse import urlparse
 
 import httpx
 from cryptography.hazmat.primitives import padding, serialization
@@ -93,54 +90,6 @@ def new_session(identity: AuthIdentity, machine_id: str, machine_token: str, mac
     cosy_key = base64.b64encode(rsa_encrypt(temp_key)).decode()
     info = base64.b64encode(aes_cbc_pkcs7_encrypt(auth_payload(identity), temp_key)).decode()
     return SessionContext(temp_key, cosy_key, info, identity, machine_id, machine_token, machine_type)
-
-
-def build_payload_b64(info: str) -> str:
-    payload = {
-        "cosyVersion": "0.1.43",
-        "ideVersion": "",
-        "info": info,
-        "requestId": str(uuid.uuid4()),
-        "version": "v1",
-    }
-    raw = json.dumps(dict(sorted(payload.items())), separators=(",", ":")).encode()
-    return base64.b64encode(raw).decode()
-
-
-def sign_request(payload_b64: str, cosy_key: str, cosy_date: str, body: str, path_without_algo: str) -> str:
-    raw = f"{payload_b64}\n{cosy_key}\n{cosy_date}\n{body}\n{path_without_algo}"
-    return hashlib.md5(raw.encode()).hexdigest()
-
-
-def bearer_headers(sess: SessionContext, full_url: str, body: str, accept: str, extra_headers: dict[str, str] | None = None) -> dict[str, str]:
-    path = urlparse(full_url).path
-    path_sig = path[len("/algo") :] if path.startswith("/algo") else path
-    payload_b64 = build_payload_b64(sess.info)
-    date = str(int(time.time()))
-    sig = sign_request(payload_b64, sess.cosy_key, date, body, path_sig)
-    headers = {
-        "cosy-data-policy": "AGREE",
-        "content-type": "application/json",
-        "cosy-machinetype": sess.machine_type,
-        "cosy-clienttype": "5",
-        "cosy-date": date,
-        "cosy-user": sess.identity.uid,
-        "cosy-key": sess.cosy_key,
-        "accept": accept,
-        "cosy-clientip": "169.254.198.161",
-        "authorization": f"Bearer COSY.{payload_b64}.{sig}",
-        "accept-encoding": "identity",
-        "cosy-version": "0.1.43",
-        "cosy-machineid": sess.machine_id,
-        "cosy-machinetoken": sess.machine_token,
-        "login-version": "v2",
-        "user-agent": "Go-http-client/2.0",
-    }
-    if accept == "text/event-stream":
-        headers["cache-control"] = "no-cache"
-    if extra_headers:
-        headers.update(extra_headers)
-    return headers
 
 
 async def exchange_job_token(personal_token: str, machine_id: str, machine_token: str, machine_type: str) -> dict[str, Any]:

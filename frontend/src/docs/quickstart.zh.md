@@ -15,7 +15,7 @@
 先克隆仓库并安装依赖：
 
 ```bash
-git clone https://github.com/bzym2/QoderGateway.git
+git clone https://github.com/Arimayuki03/QoderGateway.git
 cd QoderGateway
 uv sync
 ```
@@ -32,17 +32,14 @@ WebUI 地址：
 http://127.0.0.1:5050/
 ```
 
-## 登录与修改默认密码
+## 登录与设置管理员密码
 
-默认网关登录密钥是：
+QoderGate 没有默认密码。首次启动建库时，网关会读取 `QODER_ADMIN_PASSWORD`：
 
-```text
-admin
-```
+- 已设置：该值即管理员密码；
+- 留空：自动生成强随机口令并打印到控制台（**仅显示这一次**，请立即保存）。
 
-第一次启动后可以直接用 `admin` 登录控制台。
-
-强烈建议你立刻修改默认密码。复制环境变量模板：
+如需在首次启动前指定自己的密码，复制环境变量模板：
 
 ```bash
 mv .env.example .env
@@ -54,7 +51,7 @@ mv .env.example .env
 QODER_ADMIN_PASSWORD=your-strong-password
 ```
 
-这个密码用于保护所有 `/ui/*` 管理接口，前端会自动把它作为 `X-Gateway-Token` 发送。
+这个密码用于保护所有 `/ui/*` 管理接口，前端会自动把它作为 `X-Gateway-Token` 发送；之后也可以随时在 WebUI 控制台中修改。
 
 ## 管理 Qoder 账号
 

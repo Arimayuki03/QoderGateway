@@ -15,7 +15,7 @@ Follow these steps:
 Clone the repository and install dependencies:
 
 ```bash
-git clone https://github.com/bzym2/QoderGateway.git
+git clone https://github.com/Arimayuki03/QoderGateway.git
 cd QoderGateway
 uv sync
 ```
@@ -32,17 +32,14 @@ The WebUI is served at:
 http://127.0.0.1:5050/
 ```
 
-## Login and Change the Default Password
+## Login and Set the Administrator Password
 
-The default administrator password is:
+QoderGate has no default password. On first startup (database creation), the gateway reads `QODER_ADMIN_PASSWORD`:
 
-```text
-admin
-```
+- If it is set, that value becomes the administrator password.
+- If it is left empty, a strong random password is generated and printed to the console **once** — save it immediately, it will not be shown again.
 
-You can use `admin` for the first login.
-
-Change it immediately before using the gateway seriously. Copy the environment template:
+To set your own password before the first start, copy the environment template:
 
 ```bash
 mv .env.example .env

@@ -1,5 +1,6 @@
 import copy
 import json
+import logging
 import time
 import uuid
 from collections.abc import AsyncIterator
@@ -8,141 +9,15 @@ from typing import Any
 
 import httpx
 
-from . import encoding
 from .auth import SessionContext
 from .env import httpx_client_kwargs
 
 
-QODER_CHAT_URL = "https://api3.qoder.sh/algo/api/v2/service/pro/sse/agent_chat_generation?FetchKeys=llm_model_result&AgentId=agent_common&Encode=1"
+logger = logging.getLogger("qoder2api.bridge")
+
 # 新版协议（Qoder CLI 现行）：OpenAI 兼容端点，纯 Bearer，无 COSY 签名，响应为标准 OpenAI SSE。
 # 性能远优于老版（老版默认带长 reasoning，复杂任务可到分钟级）。
 QODER_CHAT_URL_NEW = "https://api2-v2.qoder.sh/model/v1/chat/completions"
-
-
-def now_ms() -> int:
-    return int(time.time() * 1000)
-
-
-def blank_response_meta() -> dict[str, Any]:
-    return {
-        "id": "",
-        "usage": {
-            "prompt_tokens": 0,
-            "completion_tokens": 0,
-            "total_tokens": 0,
-            "completion_tokens_details": {"reasoning_tokens": 0},
-            "prompt_tokens_details": {"cached_tokens": 0},
-        },
-    }
-
-
-def template_base() -> dict[str, Any]:
-    return {
-        "request_id": str(uuid.uuid4()),
-        "request_set_id": str(uuid.uuid4()),
-        "chat_record_id": str(uuid.uuid4()),
-        "stream": True,
-        "chat_task": "FREE_INPUT",
-        "chat_context": {
-            "chatPrompt": "",
-            "extra": {"context": [], "modelConfig": {"is_reasoning": False, "key": "lite"}, "originalContent": {"type": "text", "text": "hi"}},
-            "features": [],
-            "imageUrls": None,
-            "text": {"type": "text", "text": "hi"},
-        },
-        "image_urls": None,
-        "is_reply": True,
-        "is_retry": False,
-        "session_id": str(uuid.uuid4()),
-        "code_language": "",
-        "source": 1,
-        "version": "3",
-        "chat_prompt": "",
-        "parameters": {"max_tokens": 32768},
-        "aliyun_user_type": "personal_standard",
-        "session_type": "qodercli",
-        "agent_id": "agent_common",
-        "task_id": "common",
-        "model_config": {
-            "key": "lite",
-            "display_name": "Lite",
-            "model": "",
-            "format": "openai",
-            "is_vl": False,
-            "is_reasoning": False,
-            "api_key": "",
-            "url": "",
-            "source": "system",
-            "max_input_tokens": 180000,
-        },
-        "messages": [
-            {
-                "role": "system",
-                "content": "You are Qoder, an interactive CLI tool that helps users with software engineering tasks.",
-                "response_meta": blank_response_meta(),
-                "reasoning_content_signature": "",
-            }
-        ],
-        "tools": [],
-        "business": {"product": "cli", "version": "0.1.43", "type": "agent", "id": str(uuid.uuid4()), "name": "hi", "begin_at": now_ms(), "stage": "start"},
-    }
-
-
-def normalize_content(content: Any) -> str:
-    if content is None:
-        return ""
-    if isinstance(content, str):
-        return content
-    if isinstance(content, list):
-        parts = [normalize_content_part(item) for item in content]
-        return "\n\n".join(part for part in parts if part.strip())
-    return normalize_content_part(content)
-
-
-def normalize_content_part(item: Any) -> str:
-    if item is None:
-        return ""
-    if isinstance(item, str):
-        return item
-    if isinstance(item, dict):
-        if isinstance(item.get("text"), str):
-            return item["text"]
-        if item.get("type") in {"image_url", "input_image"} and isinstance(item.get("image_url"), dict):
-            url = item["image_url"].get("url")
-            if isinstance(url, str):
-                return f"[image] {url}"
-        if isinstance(item.get("content"), (dict, list)):
-            return normalize_content(item["content"])
-        return json.dumps(item, ensure_ascii=False)
-    return json.dumps(item, ensure_ascii=False)
-
-
-def normalize_message_text(message: dict[str, Any]) -> str:
-    text = normalize_content(message.get("content"))
-    return text if text.strip() else normalize_content(message.get("contents"))
-
-
-def extract_latest_user_prompt(messages: list[dict[str, Any]]) -> str:
-    for message in reversed(messages or []):
-        if message.get("role") == "user":
-            text = normalize_message_text(message)
-            if text.strip():
-                return text
-    return ""
-
-
-def build_user_message(text: str) -> dict[str, Any]:
-    return {
-        "role": "user",
-        "content": "",
-        "contents": [{"type": "text", "text": text}],
-        "response_meta": blank_response_meta(),
-        "reasoning_content_signature": "",
-    }
-
-
-def build_structured_message(role: str, text: str) -> dict[str, Any]:
-    return {"role": role, "content": text or "", "response_meta": blank_response_meta(), "reasoning_content_signature": ""}
 
 
 def normalize_tool_arguments(arguments: Any) -> str:
@@ -186,64 +61,16 @@ def parse_tool_calls_text(text: str | None) -> list[dict[str, Any]] | None:
         return None
 
 
-def render_tool_result(message: dict[str, Any], text: str) -> str:
-    label = "Tool result"
-    if message.get("name"):
-        label += f" ({message['name']})"
-    if message.get("tool_call_id"):
-        label += f" [{message['tool_call_id']}]"
-    return f"{label}:\n{text}" if text.strip() else label
-
-
-def convert_incoming_message(message: dict[str, Any], tools_enabled: bool) -> dict[str, Any] | None:
-    role = message.get("role", "user")
-    text = normalize_message_text(message)
-    if not tools_enabled and message.get("tool_calls"):
-        calls = json.dumps(message["tool_calls"], ensure_ascii=False)
-        text = f"{text}\n\nTool calls:\n{calls}" if text.strip() else f"Tool calls:\n{calls}"
-    if role == "tool":
-        if tools_enabled:
-            out = build_structured_message("tool", text)
-            if message.get("name"):
-                out["name"] = message["name"]
-            if message.get("tool_call_id"):
-                out["tool_call_id"] = message["tool_call_id"]
-            return out
-        role = "user"
-        text = render_tool_result(message, text)
-    if not text.strip() and not (tools_enabled and role == "assistant" and message.get("tool_calls")):
-        return None
-    if role == "user":
-        return build_user_message(text)
-    out = build_structured_message(role, text)
-    if tools_enabled and role == "assistant":
-        tool_calls = normalize_tool_calls(message.get("tool_calls")) or parse_tool_calls_text(text)
-        if tool_calls:
-            out["tool_calls"] = tool_calls
-            if parse_tool_calls_text(text):
-                out["content"] = ""
-    return out
-
-
-def build_qoder_messages(template_messages: list[dict[str, Any]], incoming: list[dict[str, Any]], prompt: str, tools_enabled: bool) -> list[dict[str, Any]]:
-    rebuilt = []
-    if not any(message.get("role") == "system" for message in incoming or []):
-        rebuilt.extend(copy.deepcopy(message) for message in template_messages if message.get("role") == "system")
-    for message in incoming or []:
-        converted = convert_incoming_message(message, tools_enabled)
-        if converted:
-            rebuilt.append(converted)
-    if not rebuilt and prompt.strip():
-        rebuilt.append(build_user_message(prompt))
-    return rebuilt
-
-
 def build_qoder_body(req: dict[str, Any], sess: SessionContext) -> tuple[dict[str, Any], str, bool]:
     """新版协议 body：OpenAI 原生格式，直接透传 messages/tools。"""
     model = req.get("model") or "lite"
     messages = req.get("messages") if isinstance(req.get("messages"), list) else []
     tools_enabled = bool(req.get("tools"))
     rid = str(uuid.uuid4())
+    # 上游 schema 未验证：OpenAI 采样参数不转发，仅记录 debug 提示（文档另行更新）
+    dropped = [k for k in ("temperature", "max_tokens", "top_p", "stop") if k in req]
+    if dropped:
+        logger.debug("采样参数未转发上游: %s", ", ".join(dropped))
     body: dict[str, Any] = {
         "model": model,
         "messages": copy.deepcopy(messages or []),
@@ -310,7 +137,6 @@ def extract_delta(data_line: str) -> BridgeDelta:
         return BridgeDelta("", "", None, usage)
     except (TypeError, json.JSONDecodeError):
         return BridgeDelta()
-    return BridgeDelta()
 
 
 def make_chunk(chunk_id: str, created: int, model: str, delta: dict[str, Any] | None = None, finish_reason: str | None = None) -> dict[str, Any]:

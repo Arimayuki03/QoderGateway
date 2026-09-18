@@ -47,6 +47,10 @@ curl http://127.0.0.1:5050/v1/chat/completions \
   }'
 ```
 
+## Request Parameters
+
+QoderGate forwards `model`, `messages`, `tools`, `stream`, `stream_options` and `metadata` to the upstream Qoder model service. OpenAI sampling parameters — `temperature`, `max_tokens`, `top_p`, `stop` — are accepted for compatibility but are **not forwarded** to the upstream API at present; upstream defaults apply. They are logged (debug level) when present.
+
 ## Error Responses
 
 | Status | Meaning |

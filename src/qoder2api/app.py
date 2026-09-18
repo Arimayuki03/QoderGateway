@@ -1,8 +1,11 @@
 import argparse
 import asyncio
 import collections
+import hashlib
 import hmac
 import os
+import sys
+import threading
 import time
 from contextlib import asynccontextmanager
 from datetime import datetime
@@ -17,7 +20,7 @@ from fastapi.staticfiles import StaticFiles
 from .auth import SessionContext, create_session
 from .bridge import complete_openai_response, stream_openai_response
 from .config import load_config, save_config
-from .database import get_db
+from .database import get_db, init_db
 from .env import env_bool
 from .accounts import (
     db_load_accounts,
@@ -28,6 +31,7 @@ from .accounts import (
     rotate_next_account,
     batch_import_accounts,
     save_device_credentials,
+    upsert_account_credentials,
 )
 from .registrar import (
     get_registrar_status,
@@ -51,8 +55,11 @@ DOCS_HTML = Path(BASE_DIR) / "static" / "docs.html"
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    # 应用启动时开启 token 定时刷新线程：uvicorn 直接加载 app 时也能生效；
-    # start_refresh_loop 内部幂等，不会与 main() 里的调用重复启动
+    # 建库/迁移从导入期（原 database.py 模块级 init_db()）下沉到启动期，消除 import 副作用；
+    # 必须先于 start_refresh_loop：刷新线程首轮就会查询 accounts 表
+    init_db()
+    # 应用启动时开启 token 定时刷新线程：uvicorn 直接加载 app 与 main() 入口都会经过
+    # lifespan；start_refresh_loop 内部幂等，重复调用也只会启动一次
     start_refresh_loop()
     yield
 
@@ -70,10 +77,20 @@ app.mount("/assets", StaticFiles(directory=os.path.join(BASE_DIR, "static", "ass
 
 # 基础安全响应头（S6）：纯 ASGI 中间件实现，不包装响应流（不影响 SSE），也不校验 Host
 # （会破坏局域网直接以 IP/主机名访问的场景）
+# CSP：前端产物无内联 script（外链 module），样式需 'unsafe-inline' 与 Google Fonts /
+# cdnfonts 外链（构建产物引用），字体走 fonts.gstatic.com / fonts.cdnfonts.com 与 data:
 _SECURITY_HEADERS = (
     (b"x-frame-options", b"DENY"),
     (b"x-content-type-options", b"nosniff"),
     (b"referrer-policy", b"same-origin"),
+    (
+        b"content-security-policy",
+        b"default-src 'self'; script-src 'self'; "
+        b"style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://fonts.cdnfonts.com; "
+        b"font-src 'self' data: https://fonts.gstatic.com https://fonts.cdnfonts.com; "
+        b"img-src 'self' data:; connect-src 'self'; object-src 'none'; "
+        b"frame-ancestors 'none'; base-uri 'self'; form-action 'self'",
+    ),
 )
 
 
@@ -127,56 +144,109 @@ add_log("Qoder2API Python Bridge initialized.")
 
 
 
-def check_gateway_token(x_gateway_token: str | None = Header(default=None)):
+def _constant_time_eq(a: Any, b: Any) -> bool:
+    """常量时间比较口令/密钥：两边先各自 SHA-256 成定长摘要再 hmac.compare_digest。
+
+    同时消除两类问题：
+    1. compare_digest 直接比较 str 时任一侧含非 ASCII 字符会抛 TypeError（→ 500）；
+    2. 长度预检/短路比较造成的长度侧信道（摘要定长，耗时与输入长度无关）。
+    非 str/bytes（如缺失的请求头）一律视为不相等，绝不抛错。
+    """
+    if not isinstance(a, (str, bytes)) or not isinstance(b, (str, bytes)):
+        return False
+    if isinstance(a, str):
+        a = a.encode("utf-8")
+    if isinstance(b, str):
+        b = b.encode("utf-8")
+    return hmac.compare_digest(hashlib.sha256(a).digest(), hashlib.sha256(b).digest())
+
+
+# 网关口令防爆破（纯内存实现，本地单用户场景）：
+# 失败后 5s 冷却；15 分钟窗口内失败满 5 次锁定 15 分钟。
+# 原来只覆盖 /ui/verify，现下沉到 check_gateway_token，所有 /ui/* 端点自动获得保护；
+# /ui/verify 复用同一套状态。check_gateway_token 是同步依赖（线程池执行），
+# /ui/verify 是 async（事件循环执行），故用锁保护共享状态。
+_auth_attempts: dict[str, float] = {}        # 来源 -> 最近一次失败时间（冷却锚点）
+_auth_failures: dict[str, list[float]] = {}  # 来源 -> 失败时间戳列表
+_AUTH_COOLDOWN = 5.0
+_AUTH_MAX_FAILURES = 5
+_AUTH_FAIL_WINDOW = 900.0
+_AUTH_LOCKOUT = 900.0
+_AUTH_GC_INTERVAL = 300.0
+_auth_last_gc = 0.0
+_auth_state_lock = threading.Lock()
+
+
+def _reset_auth_state() -> None:
+    """清空防爆破状态（测试隔离用；生产运行期无需调用）。"""
+    global _auth_last_gc
+    with _auth_state_lock:
+        _auth_attempts.clear()
+        _auth_failures.clear()
+        _auth_last_gc = 0.0
+
+
+def _auth_rate_limit_check(client_ip: str) -> None:
+    """锁定/冷却检查：命中则抛 429，否则放行。调用顺序：先查锁 → 再比较 → 失败计数。"""
+    global _auth_last_gc
+    now = time.time()
+    with _auth_state_lock:
+        if now - _auth_last_gc > _AUTH_GC_INTERVAL:
+            # 定期清理过期记录，避免字典无限增长
+            for ip, ts in list(_auth_attempts.items()):
+                if now - ts > 3600:
+                    _auth_attempts.pop(ip, None)
+            for ip, fails in list(_auth_failures.items()):
+                if not fails or now - fails[-1] > 3600:
+                    _auth_failures.pop(ip, None)
+            _auth_last_gc = now
+        recent_fails = [ts for ts in _auth_failures.get(client_ip, []) if now - ts < _AUTH_FAIL_WINDOW]
+        _auth_failures[client_ip] = recent_fails
+        if len(recent_fails) >= _AUTH_MAX_FAILURES and now < recent_fails[-1] + _AUTH_LOCKOUT:
+            raise HTTPException(status_code=429, detail="失败次数过多，已临时锁定，请 15 分钟后再试")
+        if now - _auth_attempts.get(client_ip, 0.0) < _AUTH_COOLDOWN:
+            raise HTTPException(status_code=429, detail="尝试过于频繁，请稍后再试")
+
+
+def _auth_record_failure(client_ip: str) -> None:
+    now = time.time()
+    with _auth_state_lock:
+        _auth_attempts[client_ip] = now
+        _auth_failures.setdefault(client_ip, []).append(now)
+
+
+def _auth_reset_client(client_ip: str) -> None:
+    """认证成功：清空该来源的冷却与失败记录（成功清零计数）。"""
+    with _auth_state_lock:
+        _auth_attempts.pop(client_ip, None)
+        _auth_failures.pop(client_ip, None)
+
+
+def check_gateway_token(request: Request, x_gateway_token: str | None = Header(default=None)) -> None:
+    client_ip = request.client.host if request.client else "unknown"
+    _auth_rate_limit_check(client_ip)
     config = load_config()
     # 库中缺行时为空串，直接 fail closed（不再兜底默认口令）
     gateway_token = str(config.get("gateway_token") or "")
-    if not gateway_token or not x_gateway_token or not hmac.compare_digest(str(x_gateway_token), gateway_token):
+    if not gateway_token or not _constant_time_eq(x_gateway_token, gateway_token):
+        _auth_record_failure(client_ip)
         raise HTTPException(status_code=401, detail="Unauthorized gateway access")
-
-
-# /ui/verify 简单限速：按来源 IP 记录最近失败，失败后 5s 冷却；
-# 15 分钟窗口内失败满 5 次锁定 15 分钟（防爆破，纯内存实现）；
-# 定期清理过期记录，避免字典无限增长
-_verify_attempts: dict[str, float] = {}
-_verify_failures: dict[str, list[float]] = {}
-_VERIFY_COOLDOWN = 5.0
-_VERIFY_MAX_FAILURES = 5
-_VERIFY_FAIL_WINDOW = 900.0
-_VERIFY_LOCKOUT = 900.0
-_VERIFY_GC_INTERVAL = 300.0
-_verify_last_gc = 0.0
+    _auth_reset_client(client_ip)
 
 
 @app.post("/ui/verify")
 async def verify_gateway(payload: dict[str, Any], request: Request) -> dict[str, Any]:
-    global _verify_last_gc
+    """登录验证：与 check_gateway_token 共用同一套防爆破状态（冷却/锁定/成功清零）。"""
     client_ip = request.client.host if request.client else "unknown"
-    now = time.time()
-    if now - _verify_last_gc > _VERIFY_GC_INTERVAL:
-        for ip, ts in list(_verify_attempts.items()):
-            if now - ts > 3600:
-                _verify_attempts.pop(ip, None)
-        for ip, fails in list(_verify_failures.items()):
-            if not fails or now - fails[-1] > 3600:
-                _verify_failures.pop(ip, None)
-        _verify_last_gc = now
-    # 失败计数锁定：15 分钟窗口内失败满 5 次，锁定 15 分钟
-    recent_fails = [ts for ts in _verify_failures.get(client_ip, []) if now - ts < _VERIFY_FAIL_WINDOW]
-    if len(recent_fails) >= _VERIFY_MAX_FAILURES and now < recent_fails[-1] + _VERIFY_LOCKOUT:
-        raise HTTPException(status_code=429, detail="失败次数过多，已临时锁定，请 15 分钟后再试")
-    if now - _verify_attempts.get(client_ip, 0.0) < _VERIFY_COOLDOWN:
-        raise HTTPException(status_code=429, detail="尝试过于频繁，请稍后再试")
-    token = str(payload.get("token", "")).strip()
+    _auth_rate_limit_check(client_ip)
+    token = payload.get("token")
+    token = token.strip() if isinstance(token, str) else ""
     config = load_config()
     gateway_token = str(config.get("gateway_token") or "")
-    if token and gateway_token and hmac.compare_digest(token, gateway_token):
-        # 验证成功：清空该 IP 的冷却与失败记录
-        _verify_attempts.pop(client_ip, None)
-        _verify_failures.pop(client_ip, None)
+    if token and gateway_token and _constant_time_eq(token, gateway_token):
+        _auth_reset_client(client_ip)
         return {"status": "ok"}
-    _verify_attempts[client_ip] = now
-    _verify_failures.setdefault(client_ip, []).append(now)
+    _auth_record_failure(client_ip)
     raise HTTPException(status_code=401, detail="Invalid Gateway Token")
 
 
@@ -193,15 +263,15 @@ async def get_session() -> SessionContext:
             try:
                 sess = await create_session(pat)
                 with get_db() as conn:
-                    conn.execute(
-                        """
-                        INSERT OR REPLACE INTO accounts (
-                            uid, name, user_type, security_oauth_token, refresh_token, machine_id,
-                            enabled, last_status, last_error
-                        ) VALUES (?, ?, ?, ?, ?, ?, 1, 'ok', NULL)
-                        """,
-                        (sess.identity.uid, sess.identity.name or "Environment PAT", sess.identity.user_type,
-                         sess.identity.security_oauth_token, sess.identity.refresh_token, sess.machine_id)
+                    # ON CONFLICT 只更新凭据类列，保留 enabled/quota/plan 等既有状态
+                    upsert_account_credentials(
+                        conn,
+                        uid=sess.identity.uid,
+                        name=sess.identity.name or "Environment PAT",
+                        user_type=sess.identity.user_type,
+                        security_oauth_token=sess.identity.security_oauth_token,
+                        refresh_token=sess.identity.refresh_token,
+                        machine_id=sess.machine_id,
                     )
                 db_set_settings("active_uid", sess.identity.uid)
                 add_log(f"Imported environment PAT as account: {sess.identity.name}")
@@ -251,7 +321,6 @@ async def documents() -> HTMLResponse:
 
 @app.get("/ui/status")
 async def status(verify: None = Depends(check_gateway_token)) -> dict[str, Any]:
-    global _local_auth_error
     try:
         await get_session()
     except Exception:
@@ -482,20 +551,19 @@ async def set_session(payload: dict[str, Any], verify: None = Depends(check_gate
     try:
         add_log("Attempting to save session from PAT...")
         sess = await create_session(pat)
-        
-        # Insert or update in SQLite
+
+        # Insert or update in SQLite（ON CONFLICT 保留既有账号状态，见 accounts.upsert_account_credentials）
         with get_db() as conn:
-            conn.execute(
-                """
-                INSERT OR REPLACE INTO accounts (
-                    uid, name, user_type, security_oauth_token, refresh_token, machine_id,
-                    enabled, last_status, last_error
-                ) VALUES (?, ?, ?, ?, ?, ?, 1, 'ok', ?)
-                """,
-                (sess.identity.uid, sess.identity.name or "PAT Account", sess.identity.user_type,
-                 sess.identity.security_oauth_token, sess.identity.refresh_token, sess.machine_id, None)
+            upsert_account_credentials(
+                conn,
+                uid=sess.identity.uid,
+                name=sess.identity.name or "PAT Account",
+                user_type=sess.identity.user_type,
+                security_oauth_token=sess.identity.security_oauth_token,
+                refresh_token=sess.identity.refresh_token,
+                machine_id=sess.machine_id,
             )
-            
+
         db_set_settings("active_uid", sess.identity.uid)
         
         add_log(f"Session saved from PAT. User: {sess.identity.name}")
@@ -540,13 +608,10 @@ def is_account_error(exc: Exception) -> bool:
 
 
 def _api_key_allowed(incoming_key: str, allowed_keys: list[Any]) -> bool:
-    """常量时间校验 API Key：先比长度可提前失败，再逐个 compare_digest，
-    避免短路比较泄漏前缀匹配信息。"""
+    """常量时间校验 API Key：逐个经 _constant_time_eq（SHA-256 摘要后比较），
+    无长度预检、无短路泄漏，且天然兼容非 ASCII 字符。"""
     for allowed in allowed_keys:
-        allowed = str(allowed)
-        if len(incoming_key) != len(allowed):
-            continue
-        if hmac.compare_digest(incoming_key, allowed):
+        if _constant_time_eq(incoming_key, str(allowed)):
             return True
     return False
 
@@ -603,6 +668,10 @@ async def chat_completions(payload: dict[str, Any], authorization: str | None = 
                 resp = await complete_openai_response(payload, sess)
                 add_log("Completion request finished successfully.")
                 return resp
+        except HTTPException:
+            # 请求级错误（如 get_session 的 400「未配置账号」）原样上抛，
+            # 不能被下面的 except Exception 吞成 502
+            raise
         except Exception as exc:
             current_uid = sess.identity.uid if sess is not None else "unknown"
             if is_account_error(exc):
@@ -642,12 +711,23 @@ async def chat_completions(payload: dict[str, Any], authorization: str | None = 
 def main() -> None:
     import uvicorn
 
-    start_refresh_loop()  # 启动 token 定时刷新线程（每 6 小时）
+    # 非 UTF-8 控制台（如 Windows cp1252/gbk）下打印中文/特殊字符会 UnicodeEncodeError：
+    # 入口处统一把 stdout/stderr 重配为 UTF-8（仅当对象支持 reconfigure 时，参考独立注册机做法）
+    for _stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(_stream, "reconfigure", None)
+        if reconfigure is None:
+            continue
+        try:
+            reconfigure(encoding="utf-8", errors="replace")
+        except (ValueError, OSError):
+            pass
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--host", default=os.getenv("QODER_HOST", "127.0.0.1"))
     parser.add_argument("--port", type=int, default=int(os.getenv("QODER_PORT", "5050")))
     args = parser.parse_args()
+    # 刷新线程与建库都在 lifespan 中启动（init_db 先于 start_refresh_loop），
+    # main() 不再提前启动刷新线程，避免其在建库完成前查询 accounts 表
     uvicorn.run("qoder2api.app:app", host=args.host, port=args.port, reload=False)
 
 if __name__ == "__main__":

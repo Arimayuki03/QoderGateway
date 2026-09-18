@@ -1,3 +1,4 @@
+import hashlib
 import time
 import uuid
 from typing import Any
@@ -34,6 +35,44 @@ def db_set_settings(key: str, value: str, conn=None) -> None:
             "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
             (key, str(value))
         )
+
+
+def upsert_account_credentials(
+    conn,
+    uid: str,
+    name: str,
+    user_type: str,
+    security_oauth_token: str,
+    refresh_token: str,
+    machine_id: str,
+    token_expires_at: Any = None,
+) -> None:
+    """写入账号凭据：新行用默认状态；已存在（uid 冲突）时只更新凭据类列。
+
+    冲突时保留既有 enabled / last_status / last_error / quota /
+    is_quota_exceeded / plan / user_tag / next_reset_at——旧的
+    INSERT OR REPLACE 会把这些状态强制重置（enabled 回 1、配额/套餐清成
+    默认假数据、last_status 重写为 'ok'），再导入同 uid 会抹掉用户状态。
+    新插入行的默认值与本表建表默认一致（enabled=1、quota=0、
+    plan='PLAN_TIER_PRO_TRIAL'、user_tag='Pro Trial'）。
+    """
+    conn.execute(
+        """
+        INSERT INTO accounts (
+            uid, name, user_type, security_oauth_token, refresh_token, machine_id,
+            enabled, last_status, last_error, quota, is_quota_exceeded, plan, user_tag,
+            next_reset_at, token_expires_at
+        ) VALUES (?, ?, ?, ?, ?, ?, 1, 'ok', NULL, 0, 0, 'PLAN_TIER_PRO_TRIAL', 'Pro Trial', NULL, ?)
+        ON CONFLICT(uid) DO UPDATE SET
+            name = excluded.name,
+            user_type = excluded.user_type,
+            security_oauth_token = excluded.security_oauth_token,
+            refresh_token = excluded.refresh_token,
+            machine_id = excluded.machine_id,
+            token_expires_at = excluded.token_expires_at
+        """,
+        (uid, name, user_type, security_oauth_token, refresh_token, machine_id, token_expires_at),
+    )
 
 
 def db_load_accounts() -> dict[str, Any]:
@@ -135,27 +174,20 @@ def batch_import_accounts(records: list[dict]) -> dict:
                 skipped += 1
                 continue
             if not uid:
-                # 无 user_id 时用 token 前 24 位兜底主键
-                uid = "tok_" + token[:24]
-            existing = conn.execute("SELECT enabled FROM accounts WHERE uid = ?", (uid,)).fetchone()
-            enabled = existing[0] if existing else 1
-            conn.execute(
-                """
-                INSERT OR REPLACE INTO accounts (
-                    uid, name, user_type, security_oauth_token, refresh_token, machine_id,
-                    enabled, last_status, last_error, quota, is_quota_exceeded, plan, user_tag, next_reset_at, token_expires_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, 'ok', NULL, 0, 0, 'PLAN_TIER_PRO_TRIAL', 'Pro Trial', NULL, ?)
-                """,
-                (
-                    uid,
-                    str(rec.get("name") or rec.get("email") or "Imported"),
-                    "personal_standard",
-                    token,
-                    str(rec.get("refresh_token") or ""),
-                    str(uuid.uuid4()),
-                    enabled,
-                    str(rec.get("expires_at") or ""),
-                ),
+                # 无 user_id 时用 token 的 SHA-256 前 24 位十六进制兜底主键
+                # （确定性：同 token 得到同 uid，重复导入命中同一行）。
+                # 注意：旧格式 "tok_" + token[:24] 的历史行不做迁移（本地小库可接受），
+                # 旧格式行与新哈希 uid 视为不同账号。
+                uid = "tok_" + hashlib.sha256(token.encode("utf-8")).hexdigest()[:24]
+            upsert_account_credentials(
+                conn,
+                uid=uid,
+                name=str(rec.get("name") or rec.get("email") or "Imported"),
+                user_type="personal_standard",
+                security_oauth_token=token,
+                refresh_token=str(rec.get("refresh_token") or ""),
+                machine_id=str(uuid.uuid4()),
+                token_expires_at=str(rec.get("expires_at") or ""),
             )
             imported += 1
         # active_uid 必须复用同一连接写入：另开连接会在本事务未提交时锁库
@@ -179,21 +211,15 @@ def save_device_credentials(cred: dict) -> dict:
     machine_id = str(uuid.uuid4())
 
     with get_db() as conn:
-        existing = conn.execute("SELECT enabled FROM accounts WHERE uid = ?", (uid,)).fetchone()
-        enabled = existing[0] if existing else 1
-        conn.execute(
-            """
-            INSERT OR REPLACE INTO accounts (
-                uid, name, user_type, security_oauth_token, refresh_token, machine_id,
-                enabled, last_status, last_error, quota, is_quota_exceeded, plan, user_tag,
-                next_reset_at, token_expires_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, 'ok', NULL, 0, 0, 'PLAN_TIER_PRO_TRIAL', 'Pro Trial', NULL, ?)
-            """,
-            (
-                uid, "Device Auth", "personal_standard",
-                token, str(cred.get("refresh_token") or ""), machine_id,
-                enabled, str(cred.get("expires_at") or ""),
-            ),
+        upsert_account_credentials(
+            conn,
+            uid=uid,
+            name="Device Auth",
+            user_type="personal_standard",
+            security_oauth_token=token,
+            refresh_token=str(cred.get("refresh_token") or ""),
+            machine_id=machine_id,
+            token_expires_at=str(cred.get("expires_at") or ""),
         )
         # 复用同一连接写入，避免嵌套事务锁库；新账号直接激活
         db_set_settings("active_uid", uid, conn=conn)
@@ -250,7 +276,16 @@ _recent_failures: dict[str, float] = {}
 
 
 def rotate_next_account(failed_uid: str, error_msg: str) -> SessionContext:
-    """Marks failed account in database, rotates to the next enabled, and returns it."""
+    """标记失败账号后，真轮转到启用账号排序中的"下一个"（环绕）并返回其会话。
+
+    - 真轮转：按 uid 排序，从 failed_uid 的下一个位置开始环绕，取第一个
+      未处于冷却期的其他启用账号；failed_uid 自身与 5 分钟内失败过的账号
+      都不作为前进目标（失败账号不再留在轮转池）。
+    - 若排除后没有其他候选（如仅单账号、或其余账号全在冷却期），则返回
+      failed_uid 账号本身（其已不在启用列表时取第一个启用账号），且不给予
+      冷却豁免——失败记录保留在 _recent_failures 中让它正常冷却，
+      避免后续轮转继续选中该失败账号无限重试。
+    """
     now = time.time()
     _recent_failures[failed_uid] = now
     with get_db() as conn:
@@ -259,30 +294,29 @@ def rotate_next_account(failed_uid: str, error_msg: str) -> SessionContext:
             (error_msg, failed_uid)
         )
 
-        # Get all enabled accounts
-        rows = conn.execute("SELECT * FROM accounts WHERE enabled = 1").fetchall()
+        # Get all enabled accounts（按 uid 排序，保证轮转顺序确定可复现）
+        rows = conn.execute("SELECT * FROM accounts WHERE enabled = 1 ORDER BY uid").fetchall()
 
     enabled_accounts = [dict(r) for r in rows]
     if not enabled_accounts:
         raise ValueError("All enabled accounts have failed or no enabled accounts exist.")
 
-    # 优先排除：刚失败的账号本身 + 5 分钟内失败过的账号（失败账号不再留在轮转池）；
-    # 排除后无可用账号（如单账号）则回退为全量启用账号，保证仍有请求路径
-    candidates = [
-        acc for acc in enabled_accounts
-        if acc["uid"] != failed_uid
-        and now - _recent_failures.get(acc["uid"], 0.0) >= _ROTATE_FAILURE_COOLDOWN
-    ]
-    if not candidates:
-        candidates = enabled_accounts
-
-    # Find next cyclic account
-    next_acc = None
+    uids = [acc["uid"] for acc in enabled_accounts]
     try:
-        failed_idx = next(i for i, acc in enumerate(candidates) if acc["uid"] == failed_uid)
-        next_acc = candidates[(failed_idx + 1) % len(candidates)]
-    except StopIteration:
-        next_acc = candidates[0]
+        failed_pos = uids.index(failed_uid)
+    except ValueError:
+        # 失败账号已不在启用列表（被删除/禁用）：从队头开始找下一个
+        failed_pos = -1
+
+    next_acc = None
+    for offset in range(1, len(enabled_accounts) + 1):
+        cand = enabled_accounts[(failed_pos + offset) % len(enabled_accounts)]
+        if cand["uid"] != failed_uid and now - _recent_failures.get(cand["uid"], 0.0) >= _ROTATE_FAILURE_COOLDOWN:
+            next_acc = cand
+            break
+    if next_acc is None:
+        # 无其他候选：返回失败账号本身，不豁免冷却（失败记录已写入 _recent_failures）
+        next_acc = enabled_accounts[failed_pos] if failed_pos >= 0 else enabled_accounts[0]
 
     db_set_settings("active_uid", next_acc["uid"])
     

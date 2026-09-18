@@ -1137,7 +1137,7 @@ export default function App() {
             <div className="flex items-center gap-8 text-body text-[16px]">
               <a href="/documents" className="hover:text-ink transition-colors cursor-pointer">{t.common.docs}</a>
               <button onClick={() => switchLang(lang === 'zh' ? 'en' : 'zh')} className="hover:text-ink transition-colors cursor-pointer">{lang === 'zh' ? 'English' : '中文'}</button>
-              <a href="https://github.com/bzym2/QoderGateway" target="_blank" rel="noreferrer" className="hover:text-ink transition-colors cursor-pointer">{t.common.support}</a>
+              <a href="https://github.com/Arimayuki03/QoderGateway" target="_blank" rel="noreferrer" className="hover:text-ink transition-colors cursor-pointer">{t.common.support}</a>
             </div>
             <div className="flex items-center gap-4">
               <div className="w-10 h-10 rounded-full bg-hairline flex items-center justify-center border border-hairline-strong text-xs font-bold text-ink">{status.username ? status.username[0].toUpperCase() : 'Q'}</div>

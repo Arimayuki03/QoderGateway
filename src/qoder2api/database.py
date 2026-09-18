@@ -1,10 +1,10 @@
-import json
 import logging
 import os
 import secrets
 import sqlite3
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
-from typing import Any
 
 from .env import load_dotenv
 
@@ -12,15 +12,42 @@ load_dotenv()
 
 logger = logging.getLogger("qoder2api.database")
 
-DB_PATH = Path.home() / ".qoder" / "qoder2api.db"
+
+def _resolve_db_path() -> Path:
+    """数据库路径：默认 ~/.qoder/qoder2api.db。
+
+    QODER_DB_PATH 环境变量可覆盖（增量、向后兼容）：主要供测试把库指到
+    临时目录，避免读写真实的 ~/.qoder 数据库；须在导入本模块前设置。
+    """
+    override = os.getenv("QODER_DB_PATH", "").strip()
+    if override:
+        return Path(override)
+    return Path.home() / ".qoder" / "qoder2api.db"
 
 
-def get_db():
+DB_PATH = _resolve_db_path()
+
+
+@contextmanager
+def get_db() -> Iterator[sqlite3.Connection]:
+    """连接上下文管理器：成功提交、异常回滚、退出必关连接。
+
+    旧实现返回裸连接，调用方的 `with conn:`（sqlite3 连接上下文）只负责
+    提交/回滚、从不关闭，长期运行会累积泄漏句柄；改为 contextmanager 后
+    统一 `with get_db() as conn:`，提交/回滚语义不变且必关连接。
+    """
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     # 多线程（refresh 线程 / to_thread / 注册机）并发写时等待锁而不是立刻抛 locked
     conn.execute("PRAGMA busy_timeout = 5000")
-    return conn
+    try:
+        yield conn
+        conn.commit()
+    except BaseException:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
 
 
 def init_db():
@@ -113,4 +140,6 @@ def init_db():
             pass
 
 
-init_db()
+# 建库时机：从导入期（原模块级 init_db()）下沉到 FastAPI lifespan（app.py），
+# 消除 import 副作用；lifespan 中保证 init_db() 先于 start_refresh_loop() 与
+# 任何请求处理执行。绕过 lifespan 直接使用本模块（如测试）需自行调用 init_db()。

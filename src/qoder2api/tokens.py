@@ -14,6 +14,7 @@ from typing import Any
 import httpx
 
 from .database import get_db
+from .env import httpx_client_kwargs
 
 OPENAPI = "https://openapi.qoder.sh"
 UA = "qoder/1.1.16"
@@ -49,7 +50,7 @@ def refresh_one_account(uid: str) -> dict[str, Any]:
         token_key = "device_token"
 
     try:
-        r = httpx.post(url, json={"refresh_token": rt}, headers=_headers(), timeout=25)
+        r = httpx.post(url, json={"refresh_token": rt}, headers=_headers(), timeout=25, **httpx_client_kwargs())
     except httpx.HTTPError as e:
         return {"ok": False, "uid": uid, "error": f"网络错误: {e}"}
 
@@ -116,6 +117,7 @@ def get_account_quota(uid: str) -> dict[str, Any]:
             f"{OPENAPI}/api/v2/quota/usage",
             headers={"Authorization": f"Bearer {tok}", "Accept": "application/json"},
             timeout=20,
+            **httpx_client_kwargs(),  # QODER_PROXY 出站代理（429 二次确认路径同样走代理）
         )
     except httpx.HTTPError as e:
         return {"ok": False, "uid": uid, "error": f"网络错误: {e}"}

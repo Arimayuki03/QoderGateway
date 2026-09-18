@@ -199,12 +199,14 @@ const _$d = (s, k = "syJkkdK5Dxwd") => {
 
 - `verifier` + `nonce` 组合等于兑换凭证：poll URL 泄露给第三方可导致账号 token 被冒领，**不得外传**。
 - `dt-` / `drt-` token 已明文存入 `~/.qoder/qoder2api.db`，该库 = 完整登录身份，注意文件权限与备份。
-- QoderGateway 目前**未实现** token 自动刷新；`dt-` 过期后需用 `POST openapi.qoder.sh/api/v1/jobToken/refresh`（body `{"refresh_token": "<drt-...>"}`）换新后更新数据库。
+- QoderGateway 已内置 token 自动刷新（后台线程定期用 `POST openapi.qoder.sh/api/v1/jobToken/refresh`，body `{"refresh_token": "<drt-...>"}` 换新并回写数据库）；手动换新可按同一接口操作。
 
 ---
 
-## 9. 后续可做（未实施）
+## 9. 后续可做（已全部实施，存档备查）
 
-- [ ] QoderGateway 增加新版协议适配：`bridge.py` 新增 `api2-v2.qoder.sh/model/v1/chat/completions` 路径（纯 Bearer，无需 COSY 签名）
-- [ ] 增加 token 自动刷新：定时/请求前检查 `expires_at`，用 `jobToken/refresh` 换新并回写数据库
-- [ ] 自动化 device flow 脚本：生成 verifier/challenge → 打印授权 URL → 轮询 poll → 拿到凭据自动入库
+以下三项在本研究文档撰写时为待办，现均已在 QoderGateway 中实现：
+
+- [x] 新版协议适配：`bridge.py` 已使用 `api2-v2.qoder.sh/model/v1/chat/completions` 路径（纯 Bearer，无需 COSY 签名，`QODER_CHAT_URL_NEW`）。
+- [x] token 自动刷新：`tokens.py` 的后台刷新线程定时用 `jobToken/refresh` 换新并回写数据库。
+- [x] 自动化 device flow：`registrar.py`（WebUI 内置注册机）与独立包 `qodergate-register` 均已实现 verifier/challenge 生成 → 授权 URL → 轮询 poll → 凭据自动入库。

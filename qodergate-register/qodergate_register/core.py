@@ -56,12 +56,28 @@ _EXPORT_LOCK = threading.Lock()  # accounts.json 读改写串行化
 
 # CLI --output 设置的导出路径（None 时用默认 APP_DIR/accounts.json）
 EXPORT_FILE: str | None = None
+# CLI --proxy 设置的出站代理（None 时直连），穿透浏览器与 HTTP 请求
+PROXY: str | None = None
+# CLI --export-plaintext：导出 accounts.json 时保留明文密码（默认打码）
+EXPORT_PLAINTEXT: bool = False
 
 
 def set_output_file(path: str | None) -> None:
     """设置导出文件路径（供 __main__.py 的 --output 调用）。"""
     global EXPORT_FILE
     EXPORT_FILE = path
+
+
+def set_proxy(proxy: str | None) -> None:
+    """设置出站代理（供 __main__.py 的 --proxy 调用）。"""
+    global PROXY
+    PROXY = proxy
+
+
+def set_export_plaintext(enabled: bool) -> None:
+    """设置是否明文导出密码（供 __main__.py 的 --export-plaintext 调用）。"""
+    global EXPORT_PLAINTEXT
+    EXPORT_PLAINTEXT = enabled
 
 
 def _log(task_id: str | None, line: str) -> None:
@@ -142,6 +158,17 @@ _VQ = VerifierQueue()
 
 
 # ---------------------------------------------------------------------------
+# 日志打码：密码 / OTP 等敏感值只记录长度，不进日志
+# ---------------------------------------------------------------------------
+def _mask_secret(selector: str, value: str) -> str:
+    """selector 或字段名含 password/otp 关键词时打码为长度占位，否则保留原值。"""
+    lowered = (selector or "").lower()
+    if "password" in lowered or "passwd" in lowered or "otp" in lowered:
+        return f"<redacted:{len(value or '')} chars>"
+    return repr(value)
+
+
+# ---------------------------------------------------------------------------
 # YYDS Mail 集成
 # ---------------------------------------------------------------------------
 def _yyds_key() -> str | None:
@@ -212,7 +239,7 @@ def yyds_wait_code(address: str, task_id: str | None = None, timeout: float = 12
                 msg = r.json()["data"]["message"]
                 code = _extract_code(msg)
                 if code:
-                    _log(task_id, f"[mail] verification code = {code}")
+                    _log(task_id, f"[mail] verification code = <redacted:{len(code)} chars>")
                     return code
                 _log(task_id, "[mail] got message but no code, keep polling...")
             elif r.status_code == 204:
@@ -246,11 +273,12 @@ def device_flow_params(machine_id: str | None = None) -> dict:
     return {"verifier": verifier, "nonce": nonce, "auth_url": auth_url, "poll_url": poll_url}
 
 
-def poll_device_token(poll_url: str, task_id: str | None = None, timeout: float = 300.0) -> dict:
+def poll_device_token(poll_url: str, task_id: str | None = None, timeout: float = 300.0,
+                      proxy: str | None = None) -> dict:
     deadline = time.time() + timeout
     while time.time() < deadline:
         try:
-            r = httpx.get(poll_url, headers={"Accept": "application/json"}, timeout=20)
+            r = httpx.get(poll_url, headers={"Accept": "application/json"}, timeout=20, proxy=proxy)
         except httpx.HTTPError as e:
             _log(task_id, f"[device] poll network error, retrying: {e}")
             time.sleep(1)
@@ -314,13 +342,20 @@ def _free_port() -> int:
 # ---------------------------------------------------------------------------
 class RegistrarBot:
     def __init__(self, task_id: str = "t1", verifier_queue: VerifierQueue | None = None,
-                 profile_dir: str | None = None, cleanup_profile: bool = False) -> None:
+                 profile_dir: str | None = None, cleanup_profile: bool = False,
+                 proxy: str | None = None) -> None:
         from DrissionPage import ChromiumOptions, ChromiumPage
 
         self.task_id = task_id
         self.vq = verifier_queue or _VQ
+        self.proxy = proxy
         co = ChromiumOptions()
         co.set_local_port(_free_port())  # 独立调试端口，杜绝实例串扰
+        if proxy:
+            co.set_proxy(proxy)
+            # 日志只保留协议+主机+端口，避免泄露代理账密
+            masked = re.sub(r"(//)[^@/]+@", r"\1", proxy[:64])
+            _log(task_id, f"[browser] using proxy {masked}")
         if profile_dir:
             self.profile_dir = profile_dir
         else:
@@ -469,7 +504,8 @@ class RegistrarBot:
                 got = el.attr("value") or ""
             if got == value:
                 return
-            _log(self.task_id, f"[fill] {selector} 值验证失败(尝试{attempt + 1}): 期望 {value!r} 实际 {got!r}，重试")
+            # 值验证失败日志打码：密码/OTP 字段只记录长度，避免明文进日志
+            _log(self.task_id, f"[fill] {selector} 值验证失败(尝试{attempt + 1}): 期望 {_mask_secret(selector, value)} 实际 {_mask_secret(selector, got)}，重试")
         raise RuntimeError(f"多次填表失败: {selector}")
 
     # ---- 打开页面且全程隐藏（仅人机验证时 show_top 显示） ----
@@ -555,7 +591,7 @@ class RegistrarBot:
         if otp_inputs:
             for i, ch in enumerate(code[: len(otp_inputs)]):
                 otp_inputs[i].input(ch)
-            _log(tid, f"[reg] OTP filled: {code}")
+            _log(tid, f"[reg] OTP filled: <redacted:{len(code)} chars>")
         else:
             self._locate('css:input[aria-label^="OTP Input"]', desc="OTP 输入框").input(code)
 
@@ -613,10 +649,11 @@ class RegistrarBot:
             raise TimeoutError("认证页未出现可点击的'继 续'按钮（可能未登录或页面结构变化）")
 
         _log(tid, ">>> 已点击'继 续'，等待服务端完成认证并 pull <<<")
-        cred = poll_device_token(flow["poll_url"], task_id=tid, timeout=300)
+        cred = poll_device_token(flow["poll_url"], task_id=tid, timeout=300, proxy=self.proxy)
+        # key 存在但值为 None 时 get 的默认值不生效，统一 or 空串，避免 None 入库触发 NOT NULL 约束
         return {
-            "token": cred.get("token"),
-            "refresh_token": cred.get("refresh_token"),
+            "token": cred.get("token") or "",
+            "refresh_token": cred.get("refresh_token") or "",
             "user_id": cred.get("user_id"),
             "expires_at": cred.get("expires_at"),
             "refresh_token_expires_at": cred.get("refresh_token_expires_at"),
@@ -637,13 +674,14 @@ def _random_name() -> tuple[str, str]:
 
 
 def _random_password(length: int = 12) -> str:
-    lower = random.choice(string.ascii_lowercase)
-    upper = random.choice(string.ascii_uppercase)
-    digit = random.choice(string.digits)
-    symbol = random.choice("!@#$%^&*()-_=+")
-    rest = "".join(random.choices(string.ascii_letters + string.digits + "!@#$%^&*()-_=+", k=length - 4))
+    # 密码属于安全凭据，用 secrets（加密安全随机）而非 random
+    lower = secrets.choice(string.ascii_lowercase)
+    upper = secrets.choice(string.ascii_uppercase)
+    digit = secrets.choice(string.digits)
+    symbol = secrets.choice("!@#$%^&*()-_=+")
+    rest = "".join(secrets.choice(string.ascii_letters + string.digits + "!@#$%^&*()-_=+") for _ in range(length - 4))
     pool = list(lower + upper + digit + symbol + rest)
-    random.shuffle(pool)
+    secrets.SystemRandom().shuffle(pool)
     return "".join(pool)
 
 
@@ -733,14 +771,14 @@ def _run_one(task_id: str) -> None:
     reg: RegistrarBot | None = None
     try:
         _set_task(task_id, "registering")
-        reg = RegistrarBot(task_id=task_id, cleanup_profile=False)
+        reg = RegistrarBot(task_id=task_id, cleanup_profile=False, proxy=PROXY)
         acct = reg.register()
         reg.close()
         profile = reg.profile_dir
         _log(task_id, "[registrar] register done")
 
         _set_task(task_id, "device_auth")
-        dev = RegistrarBot(task_id=task_id, profile_dir=profile, cleanup_profile=True)
+        dev = RegistrarBot(task_id=task_id, profile_dir=profile, cleanup_profile=True, proxy=PROXY)
         try:
             cred = dev.device()
         finally:
@@ -772,10 +810,14 @@ def _run_one(task_id: str) -> None:
 
 
 def _export_account(task_id: str, acct: dict, cred: dict, out_file: str | None = None) -> dict:
-    """注册成功 → 追加导出到 accounts.json，返回导出的记录。"""
+    """注册成功 → 追加导出到 accounts.json，返回导出的记录。
+
+    默认把密码打码写入导出文件；--export-plaintext（EXPORT_PLAINTEXT）时保留明文。
+    """
+    password_value = acct.get("password", "")
     record = {
         "email": acct.get("email", ""),
-        "password": acct.get("password", ""),
+        "password": password_value if EXPORT_PLAINTEXT else _mask_secret("password", password_value),
         "name": acct.get("name", ""),
         "user_id": cred.get("user_id", ""),
         "token": cred.get("token", ""),

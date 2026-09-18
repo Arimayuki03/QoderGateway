@@ -39,7 +39,7 @@ Special thanks to the [LINUX DO](https://linux.do) community for the platform of
 ### 安装 / Install
 
 ```bash
-git clone https://github.com/bzym2/QoderGateway.git
+git clone https://github.com/Arimayuki03/QoderGateway.git
 cd QoderGateway
 uv sync
 ```
@@ -143,9 +143,28 @@ curl http://127.0.0.1:5050/v1/chat/completions \
 │   ├── src/docs-main.tsx   # 文档站
 │   ├── src/landing-main.tsx# Landing Page
 │   └── src/docs/           # 中英文 Markdown 文档
+├── qodergate-register/     # 独立注册机 CLI（python -m qodergate_register）
+├── tests/                  # 后端单元测试（标准库 unittest）
+├── .github/workflows/      # CI（后端测试 + 前端 tsc/构建）
 ├── .env.example            # 环境变量模板
 └── pyproject.toml          # 项目配置
 ```
+
+## 测试 / Testing
+
+后端测试基于标准库 `unittest`，运行时会自动把数据库指向临时目录（`QODER_DB_PATH`），不会触碰真实的 `~/.qoder` 数据：
+
+```bash
+PYTHONPATH=src python -m unittest discover -s tests -v
+```
+
+前端类型检查与构建：
+
+```bash
+cd frontend && npx tsc --noEmit && npm run build
+```
+
+以上检查由 GitHub Actions 在每次 push / PR 时自动运行（`.github/workflows/ci.yml`）。
 
 ## License
 

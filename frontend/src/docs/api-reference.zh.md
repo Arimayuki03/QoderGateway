@@ -47,6 +47,10 @@ curl http://127.0.0.1:5050/v1/chat/completions \
   }'
 ```
 
+## 请求参数
+
+QoderGate 会把 `model`、`messages`、`tools`、`stream`、`stream_options`、`metadata` 透传给上游 Qoder 模型服务。OpenAI 采样参数——`temperature`、`max_tokens`、`top_p`、`stop`——目前仅为兼容而接受，**不会转发**到上游，实际生效的是上游默认值；请求中出现这些参数时会记录 debug 日志。
+
 ## 错误码
 
 | 状态码 | 含义 |

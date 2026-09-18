@@ -10,8 +10,13 @@
   },
   "dependencies": {
     "gsap": "^3.15.0",
+    "katex": "^0.17.0",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "react-dom": "^19.0.0",
+    "react-markdown": "^10.1.0",
+    "rehype-katex": "^7.0.1",
+    "remark-gfm": "^4.0.1",
+    "remark-math": "^6.0.0"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.3.1",
@@ -19,14 +24,7 @@
     "@types/react-dom": "^19.0.0",
     "@vitejs/plugin-react": "^6.0.5",
     "autoprefixer": "^10.5.0",
-    "framer-motion": "^12.40.0",
-    "katex": "^0.17.0",
-    "lucide-react": "^1.18.0",
     "postcss": "^8.5.15",
-    "react-markdown": "^10.1.0",
-    "rehype-katex": "^7.0.1",
-    "remark-gfm": "^4.0.1",
-    "remark-math": "^6.0.0",
     "tailwindcss": "^4.3.1",
     "typescript": "~6.0.2",
     "vite": "^8.0.12"

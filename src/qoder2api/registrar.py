@@ -30,9 +30,9 @@ from typing import Any
 
 import httpx
 
-from .accounts import db_get_settings, db_set_settings
+from .accounts import db_get_settings, db_set_settings, upsert_account_credentials
 from .database import get_db
-from .env import httpx_client_kwargs, load_dotenv
+from .env import httpx_client_kwargs, load_dotenv, proxy_url
 
 # ---------------------------------------------------------------------------
 # 配置
@@ -91,6 +91,13 @@ def _finish_task(task_id: str, stage: str, result: dict | None = None, error: st
         if error is not None:
             task["error"] = error
         _REGISTRAR["recent"][task_id] = task
+        # 历史脱敏：仅最新一条完成记录（本次归档的 task）保留明文；
+        # 更早的 recent 条目对 password/token/refresh_token 打码。
+        # result_masked 标记避免重复打码（对已打码值再打码会越遮越短）。
+        for tid, t in _REGISTRAR["recent"].items():
+            if tid != task_id and not t.get("result_masked"):
+                t["result"] = _mask_result(t.get("result"))
+                t["result_masked"] = True
         if len(_REGISTRAR["recent"]) > 30:  # 只保留最近 30 个完成记录
             oldest = min(_REGISTRAR["recent"], key=lambda tid: _REGISTRAR["recent"][tid]["started_at"])
             _REGISTRAR["recent"].pop(oldest, None)
@@ -144,6 +151,37 @@ def _mask_secret(selector: str, value: str) -> str:
     return repr(value)
 
 
+def _mask_value(value: str) -> str:
+    """打码敏感值：短值全遮；较长值保留首 2-3 位与尾 2-4 位便于辨认（如 dt-****abcd）。"""
+    v = value or ""
+    if len(v) <= 8:
+        return "****"
+    if len(v) <= 16:
+        return f"{v[:2]}****{v[-2:]}"
+    return f"{v[:3]}****{v[-4:]}"
+
+
+def _mask_result(result: dict | None) -> dict | None:
+    """归档历史用：对注册结果里的明文 password / device.token / refresh_token 打码。
+
+    最新一条完成记录保留明文（用户注册完能立刻复制），更早的 recent 条目
+    全部脱敏（见 _finish_task），避免明文凭据长期驻留内存并经 API 下发。
+    """
+    if not isinstance(result, dict):
+        return result
+    masked = dict(result)
+    if isinstance(masked.get("password"), str) and masked["password"]:
+        masked["password"] = _mask_value(masked["password"])
+    device = masked.get("device")
+    if isinstance(device, dict):
+        device = dict(device)
+        for key in ("token", "refresh_token"):
+            if isinstance(device.get(key), str) and device[key]:
+                device[key] = _mask_value(device[key])
+        masked["device"] = device
+    return masked
+
+
 # ---------------------------------------------------------------------------
 # YYDS Mail 集成
 # ---------------------------------------------------------------------------
@@ -181,6 +219,7 @@ def yyds_create_mailbox(prefix: str = "qoder", task_id: str | None = None) -> st
         headers={"X-API-Key": key, "Content-Type": "application/json"},
         json={"localPart": local},
         timeout=20,
+        **httpx_client_kwargs(),  # QODER_PROXY 出站代理，与其他出站调用保持一致
     )
     r.raise_for_status()
     address = r.json()["data"]["address"]
@@ -212,6 +251,7 @@ def yyds_wait_code(address: str, task_id: str | None = None, timeout: float = 12
                 params={"address": address, "wait": 30},
                 headers={"X-API-Key": key},
                 timeout=45,
+                **httpx_client_kwargs(),  # QODER_PROXY 出站代理
             )
             if r.status_code == 200:
                 msg = r.json()["data"]["message"]
@@ -256,7 +296,7 @@ def device_poll_once(poll_url: str) -> dict | None:
 
     供 WebUI「设备授权导入」使用；网络错误向上抛，由调用方决定重试。
     """
-    r = httpx.get(poll_url, headers={"Accept": "application/json"}, timeout=20)
+    r = httpx.get(poll_url, headers={"Accept": "application/json"}, timeout=20, **httpx_client_kwargs())
     if r.status_code == 404:
         return None
     if r.status_code == 200:
@@ -761,14 +801,15 @@ def _run_one(task_id: str) -> None:
     reg: RegistrarBot | None = None
     try:
         _set_task(task_id, "registering")
-        reg = RegistrarBot(task_id=task_id, cleanup_profile=False)
+        # QODER_PROXY 下发给浏览器实例：链路本来就支持，之前恒为 None 导致代理只对 httpx 生效
+        reg = RegistrarBot(task_id=task_id, cleanup_profile=False, proxy=proxy_url())
         acct = reg.register()
         reg.close()
         profile = reg.profile_dir
         _log(task_id, "[registrar] register done")
 
         _set_task(task_id, "device_auth")
-        dev = RegistrarBot(task_id=task_id, profile_dir=profile, cleanup_profile=True)
+        dev = RegistrarBot(task_id=task_id, profile_dir=profile, cleanup_profile=True, proxy=proxy_url())
         try:
             cred = dev.device()
         finally:
@@ -812,20 +853,16 @@ def _save_account(task_id: str, acct: dict, cred: dict) -> str:
         raise ValueError("device 凭据缺少 token（为空），注册成果无法入库，请重试")
     machine_id = str(uuid.uuid4())
     with get_db() as conn:
-        existing = conn.execute("SELECT enabled FROM accounts WHERE uid = ?", (uid,)).fetchone()
-        enabled = existing[0] if existing else 1
-        conn.execute(
-            """
-            INSERT OR REPLACE INTO accounts (
-                uid, name, user_type, security_oauth_token, refresh_token, machine_id,
-                enabled, last_status, last_error, quota, is_quota_exceeded, plan, user_tag, next_reset_at, token_expires_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, 'ok', NULL, 0, 0, 'PLAN_TIER_PRO_TRIAL', 'Pro Trial', NULL, ?)
-            """,
-            (
-                uid, acct.get("name") or "Registered", "personal_standard",
-                token, refresh_token, machine_id,
-                enabled, cred.get("expires_at") or "",
-            ),
+        # ON CONFLICT 只更新凭据类列，保留 enabled/quota/plan 等既有状态（见 accounts.upsert_account_credentials）
+        upsert_account_credentials(
+            conn,
+            uid=uid,
+            name=acct.get("name") or "Registered",
+            user_type="personal_standard",
+            security_oauth_token=token,
+            refresh_token=refresh_token,
+            machine_id=machine_id,
+            token_expires_at=str(cred.get("expires_at") or ""),
         )
         # active_uid 必须复用同一连接写入：另开连接会在本事务未提交时锁库
         if not db_get_settings("active_uid", conn=conn):
