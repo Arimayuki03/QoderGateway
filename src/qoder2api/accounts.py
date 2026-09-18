@@ -1,4 +1,3 @@
-import copy
 import uuid
 from typing import Any
 
@@ -13,13 +12,22 @@ from .auth import (
 from .database import get_db
 
 
-def db_get_settings(key: str, default: str | None = None) -> str | None:
+def db_get_settings(key: str, default: str | None = None, conn=None) -> str | None:
+    if conn is not None:
+        res = conn.execute("SELECT value FROM settings WHERE key = ?", (key,)).fetchone()
+        return res[0] if res else default
     with get_db() as conn:
         res = conn.execute("SELECT value FROM settings WHERE key = ?", (key,)).fetchone()
         return res[0] if res else default
 
 
-def db_set_settings(key: str, value: str) -> None:
+def db_set_settings(key: str, value: str, conn=None) -> None:
+    if conn is not None:
+        conn.execute(
+            "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
+            (key, str(value))
+        )
+        return
     with get_db() as conn:
         conn.execute(
             "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
@@ -126,7 +134,7 @@ def batch_import_accounts(records: list[dict]) -> dict:
                 skipped += 1
                 continue
             if not uid:
-                # 无 user_id 时用 token 前 12 位兜底主键
+                # 无 user_id 时用 token 前 24 位兜底主键
                 uid = "tok_" + token[:24]
             existing = conn.execute("SELECT enabled FROM accounts WHERE uid = ?", (uid,)).fetchone()
             enabled = existing[0] if existing else 1
@@ -149,11 +157,47 @@ def batch_import_accounts(records: list[dict]) -> dict:
                 ),
             )
             imported += 1
-        if not db_get_settings("active_uid"):
+        # active_uid 必须复用同一连接写入：另开连接会在本事务未提交时锁库
+        if not db_get_settings("active_uid", conn=conn):
             active = conn.execute("SELECT uid FROM accounts WHERE enabled = 1 LIMIT 1").fetchone()
             if active:
-                db_set_settings("active_uid", active["uid"])
+                db_set_settings("active_uid", active["uid"], conn=conn)
     return {"imported": imported, "skipped": skipped}
+
+
+def save_device_credentials(cred: dict) -> dict:
+    """把设备授权拿到的凭据写入账号池并激活，返回账号摘要。
+
+    cred 字段来自 deviceToken/poll 的 200 响应：
+    token / refresh_token / user_id / expires_at / refresh_token_expires_at
+    """
+    uid = str(cred.get("user_id") or "").strip()
+    token = str(cred.get("token") or "").strip()
+    if not uid or not token:
+        raise ValueError("device 凭据缺少 user_id 或 token，无法入库")
+    machine_id = str(uuid.uuid4())
+
+    with get_db() as conn:
+        existing = conn.execute("SELECT enabled FROM accounts WHERE uid = ?", (uid,)).fetchone()
+        enabled = existing[0] if existing else 1
+        conn.execute(
+            """
+            INSERT OR REPLACE INTO accounts (
+                uid, name, user_type, security_oauth_token, refresh_token, machine_id,
+                enabled, last_status, last_error, quota, is_quota_exceeded, plan, user_tag,
+                next_reset_at, token_expires_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, 'ok', NULL, 0, 0, 'PLAN_TIER_PRO_TRIAL', 'Pro Trial', NULL, ?)
+            """,
+            (
+                uid, "Device Auth", "personal_standard",
+                token, str(cred.get("refresh_token") or ""), machine_id,
+                enabled, str(cred.get("expires_at") or ""),
+            ),
+        )
+        # 复用同一连接写入，避免嵌套事务锁库；新账号直接激活
+        db_set_settings("active_uid", uid, conn=conn)
+
+    return {"uid": uid, "name": "Device Auth", "expires_at": cred.get("expires_at") or ""}
 
 
 def get_active_session() -> SessionContext:
@@ -172,7 +216,7 @@ def get_active_session() -> SessionContext:
             res = conn.execute("SELECT * FROM accounts WHERE enabled = 1 LIMIT 1").fetchone()
             if res:
                 account = dict(res)
-                db_set_settings("active_uid", account["uid"])
+                db_set_settings("active_uid", account["uid"], conn=conn)
 
     if not account:
         raise ValueError("No active or enabled accounts found in database. Please import or configure an account.")

@@ -17,6 +17,7 @@ import json
 import os
 import random
 import re
+import secrets
 import shutil
 import string
 import sys
@@ -28,8 +29,6 @@ from pathlib import Path
 from typing import Any
 
 import httpx
-
-import os
 
 APP_DIR = Path(__file__).resolve().parent.parent  # 项目根
 
@@ -53,6 +52,16 @@ _REGISTRAR: dict[str, Any] = {
     "stats": {"success": 0, "failed": 0, "total": 0},
 }
 _LOCK = threading.Lock()
+_EXPORT_LOCK = threading.Lock()  # accounts.json 读改写串行化
+
+# CLI --output 设置的导出路径（None 时用默认 APP_DIR/accounts.json）
+EXPORT_FILE: str | None = None
+
+
+def set_output_file(path: str | None) -> None:
+    """设置导出文件路径（供 __main__.py 的 --output 调用）。"""
+    global EXPORT_FILE
+    EXPORT_FILE = path
 
 
 def _log(task_id: str | None, line: str) -> None:
@@ -91,7 +100,7 @@ def _finish_task(task_id: str, stage: str, result: dict | None = None, error: st
             task["error"] = error
         _REGISTRAR["recent"][task_id] = task
         if len(_REGISTRAR["recent"]) > 30:  # 只保留最近 30 个完成记录
-            oldest = sorted(_REGISTRAR["recent"])[0]
+            oldest = min(_REGISTRAR["recent"], key=lambda tid: _REGISTRAR["recent"][tid]["started_at"])
             _REGISTRAR["recent"].pop(oldest, None)
         _REGISTRAR["stats"]["total"] += 1
         if stage == "success":
@@ -220,8 +229,9 @@ def yyds_wait_code(address: str, task_id: str | None = None, timeout: float = 12
 # Device flow（来自 qodercli 逆向：docs/qoder-protocol-research.md §4）
 # ---------------------------------------------------------------------------
 def device_flow_params(machine_id: str | None = None) -> dict:
+    # verifier 属于安全凭据，用 secrets 而非 random
     length = random.randint(43, 128)
-    verifier = "".join(random.choices(DEVICE_VERIFIER_CHARS, k=length))
+    verifier = "".join(secrets.choice(DEVICE_VERIFIER_CHARS) for _ in range(length))
     challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).decode().rstrip("=")
     nonce = str(uuid.uuid4())
     mid = machine_id or str(uuid.uuid4())
@@ -239,7 +249,12 @@ def device_flow_params(machine_id: str | None = None) -> dict:
 def poll_device_token(poll_url: str, task_id: str | None = None, timeout: float = 300.0) -> dict:
     deadline = time.time() + timeout
     while time.time() < deadline:
-        r = httpx.get(poll_url, headers={"Accept": "application/json"}, timeout=20)
+        try:
+            r = httpx.get(poll_url, headers={"Accept": "application/json"}, timeout=20)
+        except httpx.HTTPError as e:
+            _log(task_id, f"[device] poll network error, retrying: {e}")
+            time.sleep(1)
+            continue
         if r.status_code == 404:
             _log(task_id, "[device] waiting for user authorization...")
         elif r.status_code == 200:
@@ -255,7 +270,7 @@ def poll_device_token(poll_url: str, task_id: str | None = None, timeout: float 
 # 按钮识别（规则来自 scripts/buttons_dump.json 实测：button + '继 续' + ant-btn-primary）
 # ---------------------------------------------------------------------------
 def _normalize_text(text: Any) -> str:
-    return (text or "").replace("\u00a0", " ").replace(" ", "").replace("\n", "").replace("\r", "").strip()
+    return (text or "").replace("\u00a0", " ").replace(" ", "").replace("\n", "").replace("\r", "").strip().lower()
 
 
 def _score_button(feat: dict[str, Any]) -> int:
@@ -268,7 +283,7 @@ def _score_button(feat: dict[str, Any]) -> int:
         score -= 1000
     if tag == "button":
         score += 10
-    for pts, kw in ((100, "继续"), (90, "同意"), (90, "授权"), (80, "authorize")):
+    for pts, kw in ((100, "继续"), (100, "continue"), (90, "同意"), (90, "授权"), (80, "authorize")):
         if kw in text:
             score += pts
             break
@@ -404,19 +419,45 @@ class RegistrarBot:
         if btn is not None:
             btn.click()
             return
-        self.page.ele('css:button[type="submit"]').click()
+        _log(self.task_id, "[submit] 未识别到提交按钮（已尝试 css:button / css:a[href] / css:[role=button]），回退尝试 css:button[type=\"submit\"]")
+        self._locate('css:button[type="submit"]', desc="提交按钮").click()
 
     # ---- 填表（身份断言 + 清空 + 输入后值验证，防串扰） ----
+    def _locate(self, selector: str, timeout: float | None = None,
+                desc: str = "", displayed: bool = False) -> Any:
+        """定位元素；找不到时输出具体定位符并抛 ElementNotFoundError。
+
+        DrissionPage 4.1.1.4 默认不抛 ElementNotFoundError/WaitTimeoutError
+        （ele() 返回 falsy 的 NoneElement，wait.ele_displayed 超时返回 False），
+        因此这里判断 falsy 而不是捕获异常。
+        """
+        from DrissionPage.errors import ElementNotFoundError
+
+        def _fail() -> None:
+            label = f"（{desc}）" if desc else ""
+            msg = f"找不到元素: {selector}{label}"
+            _log(self.task_id, f"[locate] {msg}")
+            raise ElementNotFoundError(msg)
+
+        if displayed:
+            if not self.page.wait.ele_displayed(selector, timeout=timeout or 10):
+                _fail()
+            el = self.page.ele(selector)
+        elif timeout is None:
+            el = self.page.ele(selector)
+        else:
+            el = self.page.ele(selector, timeout=timeout)
+        if not el:
+            _fail()
+        return el
+
     def _fill(self, selector: str, value: str, must_id: str | None = None,
-              placeholder: str | None = None, retries: int = 3) -> None:
-        page = self.page
+              retries: int = 3) -> None:
         for attempt in range(retries):
-            el = page.ele(selector, timeout=10)
+            el = self._locate(selector, timeout=10, desc="填表输入框")
             el_id = el.attr("id") or ""
             if must_id and el_id != must_id:
                 raise RuntimeError(f"填表定位错误: 期望 #{must_id}，实际 #{el_id} ({selector})")
-            if placeholder is not None and placeholder not in (el.attr("placeholder") or ""):
-                raise RuntimeError(f"填表定位错误: placeholder 不匹配 ({selector})")
             try:
                 el.clear()
             except Exception:
@@ -451,21 +492,21 @@ class RegistrarBot:
         _log(tid, f"[reg] name={first} {last}  mail={address}")
 
         self._open_hidden(REGISTER_URL)
-        page.wait.ele_displayed("#basic_firstName", timeout=60)
+        self._locate("#basic_firstName", timeout=60, displayed=True, desc="注册页姓输入框")
         _log(tid, "[reg] page loaded (hidden)")
 
         self._fill("#basic_firstName", first, must_id="basic_firstName")
         self._fill("#basic_lastName", last, must_id="basic_lastName")
-        self._fill("#basic_email", address, must_id="basic_email", placeholder="邮箱")
+        self._fill("#basic_email", address, must_id="basic_email")
         _log(tid, "[reg] name & email filled")
 
-        cb = page.ele("css:.ant-checkbox-input")
+        cb = self._locate("css:.ant-checkbox-input", desc="同意条款复选框")
         cb.parent().click()
         _log(tid, "[reg] checkbox checked")
         self._click_submit()
         _log(tid, "[reg] submitted email step")
 
-        page.wait.ele_displayed("#basic_password", timeout=60)
+        self._locate("#basic_password", timeout=60, displayed=True, desc="密码输入框")
         self._fill("#basic_password", password, must_id="basic_password")
         self._click_submit()
         _log(tid, "[reg] submitted password step")
@@ -475,9 +516,9 @@ class RegistrarBot:
         self.vq.acquire(tid)
         self.window_show_top()
         _log(tid, ">>> 请在本机浏览器完成人机验证（窗口已置顶）<<<")
+        otp_seen: bool | None = None
         try:
             otp_deadline = time.time() + 300
-            otp_seen = False
             while time.time() < otp_deadline:
                 if _REGISTRAR["stop_requested"]:
                     raise RuntimeError("用户请求停止注册")
@@ -491,14 +532,21 @@ class RegistrarBot:
                     otp_seen = False  # 直接跳转，无需 OTP
                     break
                 time.sleep(0.5)
-            if otp_seen:
+            if otp_seen is True:
                 _log(tid, "[reg] OTP input appeared")
-            else:
+            elif otp_seen is False:
                 _log(tid, "[reg] page jumped directly to download (no OTP)")
+            else:
+                raise TimeoutError("注册页 300s 内既未出现 OTP 输入框也未跳转成功页")
         finally:
             self.window_hide()
             self.vq.release(tid)
             _log(tid, "[verify] slider done, focus released")
+
+        if otp_seen is False:
+            # 直接跳 /download：无 OTP 环节，等待邮件并继续只会误判失败
+            _log(tid, "[reg] no OTP required, registration complete")
+            return {"email": address, "password": password, "name": f"{first} {last}"}
 
         _set_task(tid, "waiting_otp")
         code = yyds_wait_code(address, task_id=tid, timeout=120)
@@ -509,14 +557,18 @@ class RegistrarBot:
                 otp_inputs[i].input(ch)
             _log(tid, f"[reg] OTP filled: {code}")
         else:
-            page.ele('css:input[aria-label^="OTP Input"]').input(code)
+            self._locate('css:input[aria-label^="OTP Input"]', desc="OTP 输入框").input(code)
 
         deadline = time.time() + 30
+        jumped = False
         while time.time() < deadline:
             if SUCCESS_URL_MARK in page.url:
+                jumped = True
                 _log(tid, f"[reg] SUCCESS -> {page.url}")
                 break
             time.sleep(1)
+        if not jumped:
+            raise TimeoutError("OTP 已提交但 30s 内未跳转成功页，无法确认注册结果")
 
         return {"email": address, "password": password, "name": f"{first} {last}"}
 
@@ -538,12 +590,14 @@ class RegistrarBot:
                 if btn is not None:
                     before_url = page.url
                     before_fp = self._html_fp(page)
+                    before_tabs = len(page.get_tabs())
                     _log(tid, f"[dev] found button '{btn.text.strip()}', clicking...")
                     btn.click()
                     changed = False
                     for _ in range(4):  # 2s
                         time.sleep(0.5)
-                        if page.url != before_url or self._html_fp(page) != before_fp:
+                        if (page.url != before_url or self._html_fp(page) != before_fp
+                                or len(page.get_tabs()) > before_tabs):  # target=_blank 会在新标签页打开
                             changed = True
                             break
                     if changed:
@@ -669,9 +723,9 @@ def _run_parent(parent_id: str, workers: int = 3) -> None:
         _log(parent_id, "母线程停止（用户请求）")
     finally:
         with _LOCK:
+            stats = dict(_REGISTRAR["stats"])
             if _REGISTRAR["running"] and not _REGISTRAR["active"]:
                 _REGISTRAR["running"] = False
-        stats = dict(_REGISTRAR["stats"])
         _log("sched", f"全部停止。本次共注册 {stats.get('success', 0)} 个账户（失败 {stats.get('failed', 0)}）")
 
 
@@ -693,7 +747,7 @@ def _run_one(task_id: str) -> None:
             dev.close()
 
         _set_task(task_id, "saving")
-        _export_account(task_id, acct, cred)
+        _export_account(task_id, acct, cred, out_file=EXPORT_FILE)
 
         result = {
             "email": acct["email"],
@@ -705,6 +759,9 @@ def _run_one(task_id: str) -> None:
         _log(task_id, "[registrar] ALL DONE, account saved")
     except Exception as e:
         _log(task_id, f"FAILED: {type(e).__name__}: {e}")
+        if reg is not None:
+            # 失败时连带清理临时 profile，防止无限循环下泄漏磁盘
+            reg._cleanup_profile = True
         _finish_task(task_id, "failed", error=str(e))
     finally:
         if reg is not None:
@@ -728,15 +785,29 @@ def _export_account(task_id: str, acct: dict, cred: dict, out_file: str | None =
         "exported_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
     }
     target = Path(out_file) if out_file else APP_DIR / "accounts.json"
-    records: list[dict] = []
-    if target.exists():
-        try:
-            records = json.loads(target.read_text(encoding="utf-8"))
-            if not isinstance(records, list):
+    target.parent.mkdir(parents=True, exist_ok=True)
+    # 进程锁串行化读改写 + 原子替换写盘：防并发丢记录/半截文件/解析失败清空历史
+    with _EXPORT_LOCK:
+        records: list[dict] = []
+        if target.exists():
+            try:
+                loaded = json.loads(target.read_text(encoding="utf-8"))
+                if isinstance(loaded, list):
+                    records = loaded
+                else:
+                    records = []
+            except Exception:
+                backup = target.with_suffix(".json.bak")
+                try:
+                    if target.exists():
+                        shutil.copyfile(target, backup)
+                        _log(task_id, f"[export] 现有导出文件损坏，已备份到 {backup.name}")
+                except Exception:
+                    pass
                 records = []
-        except Exception:
-            records = []
-    records.append(record)
-    target.write_text(json.dumps(records, ensure_ascii=False, indent=2), encoding="utf-8")
+        records.append(record)
+        tmp = target.with_suffix(".json.tmp")
+        tmp.write_text(json.dumps(records, ensure_ascii=False, indent=2), encoding="utf-8")
+        os.replace(tmp, target)
     _log(task_id, f"[export] saved -> {target}（累计 {len(records)} 个）")
     return record

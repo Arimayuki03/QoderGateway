@@ -14,12 +14,16 @@ DB_PATH = Path.home() / ".qoder" / "qoder2api.db"
 def get_db():
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
+    # 多线程（refresh 线程 / to_thread / 注册机）并发写时等待锁而不是立刻抛 locked
+    conn.execute("PRAGMA busy_timeout = 5000")
     return conn
 
 
 def init_db():
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     with get_db() as conn:
+        # WAL：读写不互斥，缓解 refresh 线程与请求处理并发写时的 database is locked
+        conn.execute("PRAGMA journal_mode=WAL")
         # Accounts Table
         conn.execute(
             """
@@ -64,12 +68,14 @@ def init_db():
         # Set default gateway token if not present
         res = conn.execute("SELECT value FROM settings WHERE key = 'gateway_token'").fetchone()
         if not res:
-            default_token = os.getenv("QODER_ADMIN_PASSWORD", "admin").strip() or "admin"
+            # 仅首次建库时读取 env；之后以 SQLite 为准（控制台可改）
+            default_token = os.getenv("QODER_ADMIN_PASSWORD", "").strip() or "admin"
             conn.execute("INSERT INTO settings (key, value) VALUES ('gateway_token', ?)", (default_token,))
-            
+
         res_auth = conn.execute("SELECT value FROM settings WHERE key = 'auth_required'").fetchone()
         if not res_auth:
-            conn.execute("INSERT INTO settings (key, value) VALUES ('auth_required', '0')")
+            # 安全默认：未显式配置时要求 API Key 鉴权
+            conn.execute("INSERT INTO settings (key, value) VALUES ('auth_required', '1')")
 
         # token_expires_at 列（幂等：已存在则忽略）
         try:

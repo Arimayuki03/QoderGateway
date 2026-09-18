@@ -27,11 +27,6 @@ def env_bool(name: str, default: bool = True) -> bool:
     return value.strip().lower() not in {"0", "false", "no", "off"}
 
 
-def admin_password() -> str | None:
-    value = os.getenv("QODER_ADMIN_PASSWORD", "").strip()
-    return value or None
-
-
 def proxy_url() -> str | None:
     value = os.getenv("QODER_PROXY", "").strip()
     return value or None

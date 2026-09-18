@@ -17,6 +17,7 @@ import json
 import os
 import random
 import re
+import secrets
 import shutil
 import string
 import sys
@@ -91,7 +92,7 @@ def _finish_task(task_id: str, stage: str, result: dict | None = None, error: st
             task["error"] = error
         _REGISTRAR["recent"][task_id] = task
         if len(_REGISTRAR["recent"]) > 30:  # 只保留最近 30 个完成记录
-            oldest = sorted(_REGISTRAR["recent"])[0]
+            oldest = min(_REGISTRAR["recent"], key=lambda tid: _REGISTRAR["recent"][tid]["started_at"])
             _REGISTRAR["recent"].pop(oldest, None)
         _REGISTRAR["stats"]["total"] += 1
         if stage == "success":
@@ -222,8 +223,9 @@ def yyds_wait_code(address: str, task_id: str | None = None, timeout: float = 12
 # Device flow（来自 qodercli 逆向：docs/qoder-protocol-research.md §4）
 # ---------------------------------------------------------------------------
 def device_flow_params(machine_id: str | None = None) -> dict:
+    # verifier 属于安全凭据，用 secrets 而非 random
     length = random.randint(43, 128)
-    verifier = "".join(random.choices(DEVICE_VERIFIER_CHARS, k=length))
+    verifier = "".join(secrets.choice(DEVICE_VERIFIER_CHARS) for _ in range(length))
     challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).decode().rstrip("=")
     nonce = str(uuid.uuid4())
     mid = machine_id or str(uuid.uuid4())
@@ -238,10 +240,28 @@ def device_flow_params(machine_id: str | None = None) -> dict:
     return {"verifier": verifier, "nonce": nonce, "auth_url": auth_url, "poll_url": poll_url}
 
 
+def device_poll_once(poll_url: str) -> dict | None:
+    """设备授权轮询一次：404 = 等待用户授权（返回 None），200 = 返回凭据。
+
+    供 WebUI「设备授权导入」使用；网络错误向上抛，由调用方决定重试。
+    """
+    r = httpx.get(poll_url, headers={"Accept": "application/json"}, timeout=20)
+    if r.status_code == 404:
+        return None
+    if r.status_code == 200:
+        return r.json()
+    raise RuntimeError(f"device poll HTTP {r.status_code}: {r.text[:160]}")
+
+
 def poll_device_token(poll_url: str, task_id: str | None = None, timeout: float = 300.0, proxy: str | None = None) -> dict:
     deadline = time.time() + timeout
     while time.time() < deadline:
-        r = httpx.get(poll_url, headers={"Accept": "application/json"}, timeout=20, proxy=proxy)
+        try:
+            r = httpx.get(poll_url, headers={"Accept": "application/json"}, timeout=20, proxy=proxy)
+        except httpx.HTTPError as e:
+            _log(task_id, f"[device] poll network error, retrying: {e}")
+            time.sleep(1)
+            continue
         if r.status_code == 404:
             _log(task_id, "[device] waiting for user authorization...")
         elif r.status_code == 200:
@@ -312,7 +332,9 @@ class RegistrarBot:
         co.set_local_port(_free_port())  # 独立调试端口，杜绝实例串扰
         if proxy:
             co.set_proxy(proxy)
-            _log(task_id, f"[browser] using proxy {proxy[:48]}...")
+            # 日志只保留协议+主机+端口，避免泄露代理账密
+            masked = re.sub(r"(//)[^@/]+@", r"\1", proxy[:64])
+            _log(task_id, f"[browser] using proxy {masked}")
         if profile_dir:
             self.profile_dir = profile_dir
         else:
@@ -377,20 +399,31 @@ class RegistrarBot:
 
     def _locate(self, selector: str, timeout: float | None = None,
                 desc: str = "", displayed: bool = False) -> Any:
-        """定位元素；找不到时在控制台输出具体是哪个元素找不到，并抛出带定位符的错误。"""
-        from DrissionPage.errors import ElementNotFoundError, WaitTimeoutError
-        try:
-            if displayed:
-                self.page.wait.ele_displayed(selector, timeout=timeout or 10)
-                return self.page.ele(selector)
-            if timeout is None:
-                return self.page.ele(selector)
-            return self.page.ele(selector, timeout=timeout)
-        except (ElementNotFoundError, WaitTimeoutError):
+        """定位元素；找不到时在控制台输出具体是哪个元素找不到，并抛出带定位符的错误。
+
+        DrissionPage 4.1.1.4 默认不抛 ElementNotFoundError/WaitTimeoutError
+        （ele() 返回 falsy 的 NoneElement，wait.ele_displayed 超时返回 False），
+        因此这里改为判断 falsy，而不是捕获异常。
+        """
+        from DrissionPage.errors import ElementNotFoundError
+
+        def _fail() -> None:
             label = f"（{desc}）" if desc else ""
             msg = f"找不到元素: {selector}{label}"
             _log(self.task_id, f"[locate] {msg}")
-            raise ElementNotFoundError(msg) from None
+            raise ElementNotFoundError(msg)
+
+        if displayed:
+            if not self.page.wait.ele_displayed(selector, timeout=timeout or 10):
+                _fail()
+            el = self.page.ele(selector)
+        elif timeout is None:
+            el = self.page.ele(selector)
+        else:
+            el = self.page.ele(selector, timeout=timeout)
+        if not el:
+            _fail()
+        return el
 
     def _find_submit_button(self, timeout: float = 10.0):
         pairs: list[tuple] = []
@@ -497,9 +530,9 @@ class RegistrarBot:
         self.vq.acquire(tid)
         self.window_show_top()
         _log(tid, ">>> 请在本机浏览器完成人机验证（窗口已置顶）<<<")
+        otp_seen: bool | None = None
         try:
             otp_deadline = time.time() + 300
-            otp_seen = False
             while time.time() < otp_deadline:
                 if _REGISTRAR["stop_requested"]:
                     raise RuntimeError("用户请求停止注册")
@@ -513,14 +546,21 @@ class RegistrarBot:
                     otp_seen = False  # 直接跳转，无需 OTP
                     break
                 time.sleep(0.5)
-            if otp_seen:
+            if otp_seen is True:
                 _log(tid, "[reg] OTP input appeared")
-            else:
+            elif otp_seen is False:
                 _log(tid, "[reg] page jumped directly to download (no OTP)")
+            else:
+                raise TimeoutError("注册页 300s 内既未出现 OTP 输入框也未跳转成功页")
         finally:
             self.window_hide()
             self.vq.release(tid)
             _log(tid, "[verify] slider done, focus released")
+
+        if otp_seen is False:
+            # 直接跳 /download：无 OTP 环节，等待邮件并继续只会误判失败
+            _log(tid, "[reg] no OTP required, registration complete")
+            return {"email": address, "password": password, "name": f"{first} {last}"}
 
         _set_task(tid, "waiting_otp")
         code = yyds_wait_code(address, task_id=tid, timeout=120)
@@ -534,11 +574,15 @@ class RegistrarBot:
             self._locate('css:input[aria-label^="OTP Input"]', desc="OTP 输入框").input(code)
 
         deadline = time.time() + 30
+        jumped = False
         while time.time() < deadline:
             if SUCCESS_URL_MARK in page.url:
+                jumped = True
                 _log(tid, f"[reg] SUCCESS -> {page.url}")
                 break
             time.sleep(1)
+        if not jumped:
+            raise TimeoutError("OTP 已提交但 30s 内未跳转成功页，无法确认注册结果")
 
         return {"email": address, "password": password, "name": f"{first} {last}"}
 
@@ -693,9 +737,9 @@ def _run_parent(parent_id: str, workers: int = 3) -> None:
         _log(parent_id, "母线程停止（用户请求）")
     finally:
         with _LOCK:
+            stats = dict(_REGISTRAR["stats"])
             if _REGISTRAR["running"] and not _REGISTRAR["active"]:
                 _REGISTRAR["running"] = False
-                stats = dict(_REGISTRAR["stats"])
         _log("sched", f"全部停止。本次共注册 {stats.get('success', 0)} 个账户（失败 {stats.get('failed', 0)}）")
 
 
@@ -729,6 +773,9 @@ def _run_one(task_id: str) -> None:
         _log(task_id, "[registrar] ALL DONE, account saved")
     except Exception as e:
         _log(task_id, f"FAILED: {type(e).__name__}: {e}")
+        if reg is not None:
+            # 失败时连带清理临时 profile，防止无限循环下泄漏磁盘
+            reg._cleanup_profile = True
         _finish_task(task_id, "failed", error=str(e))
     finally:
         if reg is not None:
@@ -759,7 +806,8 @@ def _save_account(task_id: str, acct: dict, cred: dict) -> str:
                 enabled, cred.get("expires_at") or "",
             ),
         )
-        if not db_get_settings("active_uid"):
-            db_set_settings("active_uid", uid)
+        # active_uid 必须复用同一连接写入：另开连接会在本事务未提交时锁库
+        if not db_get_settings("active_uid", conn=conn):
+            db_set_settings("active_uid", uid, conn=conn)
     _log(task_id, f"[registrar] account saved to DB: {uid} ({acct.get('email')})")
     return uid

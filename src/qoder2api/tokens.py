@@ -56,19 +56,31 @@ def refresh_one_account(uid: str) -> dict[str, Any]:
     if r.status_code != 200:
         return {"ok": False, "uid": uid, "error": f"HTTP {r.status_code}: {r.text[:160]}"}
 
-    d = r.json()
+    try:
+        d = r.json()
+    except ValueError:
+        return {"ok": False, "uid": uid, "error": f"响应非 JSON: {r.text[:160]}"}
     new_tok = str(d.get(token_key) or d.get("token") or "").strip()
     new_rt = str(d.get("refresh_token") or "").strip()
     if not new_tok:
         return {"ok": False, "uid": uid, "error": "响应缺少 token"}
     expires_at = d.get("expires_at") or ""
 
+    # 响应未返回新 refresh_token 时保留原值，避免空串覆盖导致无法再刷新。
+    # UPDATE 必须在 with 块内执行：sqlite3 的 with 负责提交事务，块外写入不落库
     with get_db() as conn:
-        conn.execute(
-            "UPDATE accounts SET security_oauth_token = ?, refresh_token = ?, "
-            "token_expires_at = ?, last_status = 'ok', last_error = NULL WHERE uid = ?",
-            (new_tok, new_rt, expires_at, uid),
-        )
+        if new_rt:
+            conn.execute(
+                "UPDATE accounts SET security_oauth_token = ?, refresh_token = ?, "
+                "token_expires_at = ?, last_status = 'ok', last_error = NULL WHERE uid = ?",
+                (new_tok, new_rt, expires_at, uid),
+            )
+        else:
+            conn.execute(
+                "UPDATE accounts SET security_oauth_token = ?, "
+                "token_expires_at = ?, last_status = 'ok', last_error = NULL WHERE uid = ?",
+                (new_tok, expires_at, uid),
+            )
     return {"ok": True, "uid": uid, "name": row["name"], "expires_at": expires_at}
 
 
@@ -133,9 +145,10 @@ def _refresh_loop() -> None:
     while True:
         time.sleep(REFRESH_INTERVAL)
         try:
-            refresh_all_account_tokens()
-        except Exception:
-            pass
+            result = refresh_all_account_tokens()
+            print(f"[refresh] ok={result['ok']} failed={result['failed']} total={result['total']}", flush=True)
+        except Exception as e:
+            print(f"[refresh] loop error: {e}", flush=True)
 
 
 def start_refresh_loop() -> None:

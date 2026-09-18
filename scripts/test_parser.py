@@ -9,7 +9,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 from yyds_mail_parser import parse_qoder, parse_raw_source  # noqa: E402
 
 HERE = pathlib.Path(__file__).resolve().parent / "testdata"
-EXPECTED = "468896"
+EXPECTED = "123456"  # 样本中的验证码已脱敏（原真实码已过期作废）
 
 
 def test_yyds_json() -> None:

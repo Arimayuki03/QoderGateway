@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback, createContext, useContext } from 'react'
+import React, { useState, useEffect, useRef, useCallback } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import remarkMath from 'remark-math'
@@ -17,6 +17,7 @@ interface AccountsConfig { accounts: Account[]; active_uid: string | null }
 interface UIStatus { ready: boolean; mode: string; username: string | null; uid: string | null; user_type: string | null; error: string | null; accounts_count: number }
 interface APIConfig { auth_required: boolean; allowed_keys: string[] }
 interface Message { role: 'user' | 'assistant'; content: string }
+type ChatApiMessage = { role: 'system' | 'user' | 'assistant'; content: string }
 type TabId = 'dashboard' | 'accounts' | 'playground' | 'api-keys' | 'logs' | 'register'
 type AppTabId = TabId
 type Lang = 'en' | 'zh'
@@ -68,7 +69,7 @@ const UI_TEXT = {
     accounts: { desc: 'Manage Qoder accounts used by the gateway for request routing and failover.', refreshStatus: 'Refresh Status', importAccounts: 'Import Accounts', search: 'Search accounts...', empty: 'No accounts imported. Click Import Accounts or add a PAT from Dashboard.', showing: 'Showing {count} account(s)' },
     playground: { modelConfig: 'Model Configuration', streamResponse: 'Stream Response', systemPrompt: 'System Prompt', systemPromptPlaceholder: "Define the AI's persona...", ask: 'Ask anything...', send: 'Send', waiting: 'Waiting for response...' },
     api: { generate: 'Generate New Key', desc: 'Manage authentication keys and gateway access permissions for client requests.', gatewayAuth: 'Gateway Authentication', gatewayAuthDesc: 'Toggle API key validation for incoming /v1 requests.', systemStatus: 'System Status', activeKeys: 'Active Keys', configured: 'configured', activeAccessKeys: 'Active Access Keys', keyPlaceholder: 'Enter or paste a key...', noKeys: 'No API keys configured. Generate one above.', bestPractices: 'Security Best Practices', bestPracticesDesc: 'Do not expose API keys in client-side code. Rotate keys when they appear in logs, screenshots, or shared scripts.', securityPolicy: 'Security Policy' },
-    logs: { account: 'Account', status: 'Status', range: 'Range', allAccounts: 'All Accounts', allStatuses: 'All Statuses', last24h: 'Last 24h', lastHour: 'Last hour', last7d: 'Last 7 days', noLogs: 'No logs available', noMatch: 'No logs match current filters', timestamp: 'Timestamp', level: 'Level', message: 'Message' },
+    logs: { account: 'Account', status: 'Status', range: 'Range', allAccounts: 'All Accounts', allStatuses: 'All Statuses', allTime: 'All time', lastHour: 'Last hour', noLogs: 'No logs available', noMatch: 'No logs match current filters', timestamp: 'Timestamp', level: 'Level', message: 'Message' },
     register: {
       desc: 'Register multiple Qoder accounts in parallel, pull device credentials and auto-save them into the pool. Browsers stay hidden in the background; each task pops to top once for human verification, then hides again — finish one, next takes its turn.',
       start: 'Start Registration',
@@ -116,7 +117,7 @@ const UI_TEXT = {
     accounts: { desc: '管理网关用于请求路由和失败切换的 Qoder 账号。', refreshStatus: '刷新状态', importAccounts: '导入账号', search: '搜索账号...', empty: '还没有导入账号。点击导入账号，或在控制台添加 PAT。', showing: '共 {count} 个账号' },
     playground: { modelConfig: '模型配置', streamResponse: '流式响应', systemPrompt: '系统提示词', systemPromptPlaceholder: '定义模型的角色或行为...', ask: '输入要发送的内容...', send: '发送', waiting: '正在等待响应...' },
     api: { generate: '生成新 Key', desc: '管理客户端请求网关时使用的 API Key 和访问权限。', gatewayAuth: '网关 API 鉴权', gatewayAuthDesc: '控制 /v1 请求是否必须携带 API Key。', systemStatus: '系统状态', activeKeys: '可用 Key', configured: '已配置', activeAccessKeys: '已启用的 API Key', keyPlaceholder: '输入或粘贴 API Key...', noKeys: '还没有配置 API Key。请先生成并添加。', bestPractices: '安全建议', bestPracticesDesc: '不要把 API Key 写在前端代码里。如果 Key 出现在日志、截图或共享脚本中，请及时删除并重新生成。', securityPolicy: '安全策略' },
-    logs: { account: '账号', status: '级别', range: '时间范围', allAccounts: '全部账号', allStatuses: '全部级别', last24h: '最近 24 小时', lastHour: '最近 1 小时', last7d: '最近 7 天', noLogs: '暂无日志', noMatch: '没有匹配当前筛选条件的日志', timestamp: '时间', level: '级别', message: '内容' },
+    logs: { account: '账号', status: '级别', range: '时间范围', allAccounts: '全部账号', allStatuses: '全部级别', allTime: '全部时间', lastHour: '最近 1 小时', noLogs: '暂无日志', noMatch: '没有匹配当前筛选条件的日志', timestamp: '时间', level: '级别', message: '内容' },
     register: {
       desc: '并行注册多个 Qoder 账号并拉取 Device 凭据，成功后自动入库。浏览器平时隐藏后台，人机验证时置顶显示，划完一个自动轮到下一个。',
       start: '开始注册',
@@ -154,10 +155,6 @@ const TOAST_STYLES: Record<ToastType, { bg: string; border: string; icon: string
   ERROR: { bg: 'bg-white', border: 'border-l-[3px] border-l-toast-error', icon: 'error', iconFill: 'text-toast-error' },
   INFO: { bg: 'bg-white', border: 'border-l-[3px] border-l-toast-info', icon: 'info', iconFill: 'text-toast-info' },
 }
-
-// ─── Toast Context ───
-
-const ToastCtx = createContext<{ push: (t: ToastType, title: string, message: string) => void }>({ push: () => {} })
 
 // ─── Custom UI Components ───
 
@@ -285,6 +282,7 @@ function ToastContainer({ toasts, dismiss }: { toasts: ToastItem[]; dismiss: (id
         return (
           <div
             key={t.id}
+            data-toast-id={t.id}
             ref={el => { if (el) itemRefs.current.set(t.id, el) }}
             className={`pointer-events-auto ${s.bg} ${s.border} border border-hairline rounded-xl shadow-xl p-4 flex items-start gap-3 min-w-[320px]`}
           >
@@ -322,16 +320,15 @@ export default function App() {
   const [accountsConfig, setAccountsConfig] = useState<AccountsConfig>({ accounts: [], active_uid: null })
   const [apiConfig, setApiConfig] = useState<APIConfig>({ auth_required: false, allowed_keys: [] })
   const [logs, setLogs] = useState<string[]>([])
-  const [loading, setLoading] = useState(true)
 
   const [chatMessages, setChatMessages] = useState<Message[]>([
     { role: 'assistant', content: 'Hello! I am the QoderGate AI assistant. Ask me anything — I support Markdown and LaTeX math.' }
   ])
   const [chatInput, setChatInput] = useState('')
+  const [systemPrompt, setSystemPrompt] = useState('')
   const [model, setModel] = useState('lite')
   const [stream, setStream] = useState(true)
   const [generating, setGenerating] = useState(false)
-  const [showThinking, setShowThinking] = useState(true)
 
   const [newKey, setNewKey] = useState('')
   const [copiedKey, setCopiedKey] = useState<string | null>(null)
@@ -341,13 +338,17 @@ export default function App() {
   const [isExpanded, setIsExpanded] = useState(false)
 
   const [showBatchImport, setShowBatchImport] = useState(false)
+  // 设备授权导入：idle | waiting（等待浏览器授权） | success
+  const [deviceAuth, setDeviceAuth] = useState<{ state: 'idle' | 'waiting' | 'success'; nonce: string | null; authUrl: string | null }>({ state: 'idle', nonce: null, authUrl: null })
+  const deviceAuthTimer = useRef<number | null>(null)
   const [batchJson, setBatchJson] = useState('')
   const [refreshingTokens, setRefreshingTokens] = useState(false)
   const [quotaList, setQuotaList] = useState<{ uid: string; name: string; quota: { userQuota: { total: number; used: number; remaining: number; percentage: number } } }[] | null>(null)
 
   const [logFilterAccount, setLogFilterAccount] = useState('all')
   const [logFilterStatus, setLogFilterStatus] = useState('all')
-  const [logFilterRange, setLogFilterRange] = useState('24h')
+  // 日志只记录时刻没有日期，无法支撑 24h/7d 过滤，仅保留全部/最近 1 小时
+  const [logFilterRange, setLogFilterRange] = useState('all')
 
   const [regStatus, setRegStatus] = useState<RegStatus | null>(null)
   const [regStarting, setRegStarting] = useState(false)
@@ -439,16 +440,66 @@ export default function App() {
   }, [token])
 
   const fetchStatus = useCallback(async () => {
-    try { const resp = await authedFetch('/ui/status'); const data = await resp.json(); setStatus(data) } catch { /* */ } finally { setLoading(false) }
+    try { const resp = await authedFetch('/ui/status'); const data = await resp.json(); setStatus(data) } catch { /* */ }
   }, [authedFetch])
   const fetchAccounts = useCallback(async () => {
-    try { const resp = await authedFetch('/ui/accounts'); const data = await resp.json(); setAccountsConfig(data) } catch { /* */ }
+    try {
+      const resp = await authedFetch('/ui/accounts')
+      if (!resp.ok) return
+      const data = await resp.json()
+      // 形状守卫：异常响应（如 {"detail":...}）不进 state，避免渲染崩溃
+      if (data && Array.isArray(data.accounts)) setAccountsConfig({ accounts: data.accounts, active_uid: data.active_uid ?? null })
+    } catch { /* */ }
   }, [authedFetch])
   const fetchApiConfig = useCallback(async () => {
-    try { const resp = await authedFetch('/ui/config'); const data = await resp.json(); setApiConfig(data) } catch { /* */ }
+    try {
+      const resp = await authedFetch('/ui/config')
+      if (!resp.ok) return
+      const data = await resp.json()
+      if (data && typeof data === 'object') setApiConfig({ auth_required: !!data.auth_required, allowed_keys: Array.isArray(data.allowed_keys) ? data.allowed_keys : [] })
+    } catch { /* */ }
   }, [authedFetch])
-  const doBatchImport = useCallback(async () => {
-    let records: unknown
+  const stopDeviceAuthPolling = useCallback(() => {
+    if (deviceAuthTimer.current !== null) { window.clearInterval(deviceAuthTimer.current); deviceAuthTimer.current = null }
+  }, [])
+
+  // 轮询设备授权结果；ok → 入库成功刷新列表，expired → 提示重试
+  const pollDeviceAuth = useCallback((nonce: string) => {
+    stopDeviceAuthPolling()
+    deviceAuthTimer.current = window.setInterval(async () => {
+      try {
+        const resp = await authedFetch('/ui/device-auth/poll', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ nonce }) })
+        const data = await resp.json()
+        if (data.status === 'ok') {
+          stopDeviceAuthPolling()
+          setDeviceAuth({ state: 'success', nonce: null, authUrl: null })
+          pushToast('SUCCESS', lang === 'zh' ? '账号导入成功' : 'Account Imported', `${data.account?.name || ''} ${data.account?.uid?.slice(0, 12) || ''}`)
+          fetchAccounts(); fetchStatus()
+        } else if (data.status === 'expired') {
+          stopDeviceAuthPolling()
+          setDeviceAuth({ state: 'idle', nonce: null, authUrl: null })
+          pushToast('ERROR', lang === 'zh' ? '授权已超时' : 'Authorization Expired', lang === 'zh' ? '请重新点击「设备授权导入」' : 'Click "Device Auth Import" to retry')
+        }
+        // pending → 继续轮询
+      } catch { /* 网络抖动继续轮询 */ }
+    }, 2000)
+  }, [authedFetch, stopDeviceAuthPolling, pushToast, lang, fetchAccounts, fetchStatus])
+
+  // 发起设备授权：拿授权 URL → 打开浏览器 → 开始轮询
+  const startDeviceAuth = useCallback(async () => {
+    try {
+      const resp = await authedFetch('/ui/device-auth/start', { method: 'POST' })
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
+      const data = await resp.json()
+      setDeviceAuth({ state: 'waiting', nonce: data.nonce, authUrl: data.auth_url })
+      window.open(data.auth_url, '_blank', 'noopener')
+      pollDeviceAuth(data.nonce)
+    } catch (err: any) {
+      pushToast('ERROR', lang === 'zh' ? '设备授权启动失败' : 'Device auth failed to start', err.message)
+    }
+  }, [authedFetch, pollDeviceAuth, pushToast, lang])
+
+  const doBatchImport = useCallback(async () => {    let records: unknown
     try { records = JSON.parse(batchJson) } catch { pushToast('ERROR', lang === 'zh' ? 'JSON 解析失败' : 'Invalid JSON', ''); return }
     const arr = Array.isArray(records) ? records : (records as { accounts?: unknown[] }).accounts || []
     if (arr.length === 0) { pushToast('ERROR', lang === 'zh' ? '数组为空' : 'Empty array', ''); return }
@@ -587,7 +638,6 @@ export default function App() {
   const handleLogout = () => { localStorage.removeItem('gateway_token'); setToken(null); setLoginSuccess(false) }
 
   const handleImportAuth = async () => {
-    setLoading(true)
     try {
       const resp = await authedFetch('/ui/accounts/import', { method: 'POST' })
       if (!resp.ok) { const err = await resp.json(); throw new Error(err.detail || 'Import failed') }
@@ -596,7 +646,7 @@ export default function App() {
       fetchAccounts(); fetchStatus(); fetchLogs()
     } catch (err: any) {
       pushToast('ERROR', msg.importFailed, err.message)
-    } finally { setLoading(false) }
+    }
   }
 
   const handleSavePat = async () => {
@@ -641,17 +691,19 @@ export default function App() {
     } catch (err: any) { pushToast('ERROR', msg.deleteFailed, err.message) }
   }
 
-  const handleSaveApiConfig = async (newConfig: APIConfig) => {
+  const handleSaveApiConfig = async (newConfig: APIConfig): Promise<boolean> => {
     try {
-      await authedFetch('/ui/config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(newConfig) })
+      const resp = await authedFetch('/ui/config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(newConfig) })
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
       setApiConfig(newConfig)
-    } catch { pushToast('ERROR', msg.configFailed, lang === 'zh' ? '无法更新 API 配置' : 'Could not update API configuration') }
+      return true
+    } catch { pushToast('ERROR', msg.configFailed, lang === 'zh' ? '无法更新 API 配置' : 'Could not update API configuration'); return false }
   }
 
-  const handleToggleAuth = () => {
+  const handleToggleAuth = async () => {
     const updated = { ...apiConfig, auth_required: !apiConfig.auth_required }
-    handleSaveApiConfig(updated)
-    pushToast('INFO', lang === 'zh' ? '鉴权状态已更新' : 'Auth Toggled', msg.authToggled(!apiConfig.auth_required))
+    const ok = await handleSaveApiConfig(updated)
+    if (ok) pushToast('INFO', lang === 'zh' ? '鉴权状态已更新' : 'Auth Toggled', msg.authToggled(updated.auth_required))
   }
 
   const handleGenerateKey = () => {
@@ -660,18 +712,17 @@ export default function App() {
     pushToast('INFO', lang === 'zh' ? 'Key 已生成' : 'Key Generated', msg.keyGenerated)
   }
 
-  const handleAddKey = () => {
+  const handleAddKey = async () => {
     const trimmed = newKey.trim()
     if (!trimmed) return
     if (apiConfig.allowed_keys.includes(trimmed)) { pushToast('ERROR', lang === 'zh' ? 'Key 已存在' : 'Duplicate Key', msg.duplicateKey); return }
-    handleSaveApiConfig({ ...apiConfig, allowed_keys: [...apiConfig.allowed_keys, trimmed] })
-    pushToast('SUCCESS', lang === 'zh' ? 'Key 已添加' : 'Key Added', msg.keyAdded)
-    setNewKey('')
+    const ok = await handleSaveApiConfig({ ...apiConfig, allowed_keys: [...apiConfig.allowed_keys, trimmed] })
+    if (ok) { pushToast('SUCCESS', lang === 'zh' ? 'Key 已添加' : 'Key Added', msg.keyAdded); setNewKey('') }
   }
 
-  const handleDeleteKey = (key: string) => {
-    handleSaveApiConfig({ ...apiConfig, allowed_keys: apiConfig.allowed_keys.filter(k => k !== key) })
-    pushToast('SUCCESS', lang === 'zh' ? 'Key 已删除' : 'Key Removed', msg.keyRemoved)
+  const handleDeleteKey = async (key: string) => {
+    const ok = await handleSaveApiConfig({ ...apiConfig, allowed_keys: apiConfig.allowed_keys.filter(k => k !== key) })
+    if (ok) pushToast('SUCCESS', lang === 'zh' ? 'Key 已删除' : 'Key Removed', msg.keyRemoved)
   }
 
   const handleCopyKey = (key: string) => {
@@ -697,8 +748,15 @@ export default function App() {
     const headers: Record<string, string> = { 'Content-Type': 'application/json' }
     if (apiConfig.auth_required && apiConfig.allowed_keys.length > 0) headers['Authorization'] = `Bearer ${apiConfig.allowed_keys[0]}`
 
+    // 发送完整对话历史：跳过首条欢迎语和空的占位 assistant，系统提示词置顶
+    const apiMessages: ChatApiMessage[] = [
+      ...(systemPrompt.trim() ? [{ role: 'system' as const, content: systemPrompt.trim() }] : []),
+      ...chatMessages.slice(1).filter(m => !(m.role === 'assistant' && !m.content.trim())),
+      { role: 'user', content: trimmed },
+    ]
+
     try {
-      const response = await fetch('/v1/chat/completions', { method: 'POST', headers, body: JSON.stringify({ model, messages: [{ role: 'user', content: trimmed }], stream }) })
+      const response = await fetch('/v1/chat/completions', { method: 'POST', headers, body: JSON.stringify({ model, messages: apiMessages, stream }) })
       if (!response.ok) {
         const errData = await response.json()
         const errMsg = errData.detail || errData.error?.message || response.statusText
@@ -966,6 +1024,9 @@ export default function App() {
               <section className="flex justify-between items-end flex-wrap gap-4">
                 <div className="max-w-xl"><p className="text-body text-[16px]">{t.accounts.desc}</p></div>
                 <div className="flex gap-4 flex-wrap">
+                  <button onClick={startDeviceAuth} disabled={deviceAuth.state === 'waiting'} className="flex items-center gap-2 px-4 py-2.5 rounded-lg transition-all font-bold text-sm border bg-ink text-white border-ink hover:bg-neutral-800 disabled:opacity-50">
+                    <span className="material-symbols-outlined text-[18px]">devices</span>{deviceAuth.state === 'waiting' ? (lang === 'zh' ? '等待授权中...' : 'Waiting for auth...') : (lang === 'zh' ? '设备授权导入' : 'Device Auth Import')}
+                  </button>
                   <button onClick={() => { setShowBatchImport(v => !v); setQuotaList(null) }} className={`flex items-center gap-2 px-4 py-2.5 rounded-lg transition-all font-bold text-sm border ${showBatchImport ? 'bg-ink text-white border-ink' : 'text-body hover:text-ink border-hairline'}`}>
                     <span className="material-symbols-outlined text-[18px]">file_upload</span>{lang === 'zh' ? '批量导入' : 'Batch Import'}
                   </button>
@@ -983,6 +1044,22 @@ export default function App() {
                   </button>
                 </div>
               </section>
+
+              {deviceAuth.state === 'waiting' && (
+                <section className="bg-surface-card border border-hairline rounded-2xl p-6">
+                  <div className="flex items-start gap-3">
+                    <span className="material-symbols-outlined text-ink animate-pulse">devices</span>
+                    <div className="flex-grow">
+                      <p className="font-bold text-ink">{lang === 'zh' ? '等待你在浏览器中完成授权…' : 'Waiting for browser authorization…'}</p>
+                      <p className="text-body text-sm mt-1">{lang === 'zh' ? '已打开新标签页，请登录 Qoder 并点击「继 续」。若未自动打开，' : 'A new tab has opened. Sign in to Qoder and click Continue. If it did not open, '}
+                        <a href={deviceAuth.authUrl || '#'} target="_blank" rel="noopener" className="text-ink underline font-semibold">{lang === 'zh' ? '点此打开授权页' : 'open the auth page'}</a>
+                        {lang === 'zh' ? '。授权完成后本页会自动导入账号。' : '. The account will be imported automatically after authorization.'}
+                      </p>
+                    </div>
+                    <button onClick={() => { stopDeviceAuthPolling(); setDeviceAuth({ state: 'idle', nonce: null, authUrl: null }) }} className="px-3 py-1.5 text-body border border-hairline rounded-lg text-xs font-bold hover:text-ink">{lang === 'zh' ? '取消' : 'Cancel'}</button>
+                  </div>
+                </section>
+              )}
 
               {showBatchImport && (
                 <section className="bg-surface-card border border-hairline rounded-2xl p-6">
@@ -1109,7 +1186,7 @@ export default function App() {
                 </div>
                 <div className="space-y-3 flex-1 flex flex-col">
                   <label className="font-bold text-ink">{t.playground.systemPrompt}</label>
-                  <CustomTextarea value="" onChange={() => {}} placeholder={t.playground.systemPromptPlaceholder} className="flex-1 !min-h-[150px]" />
+                  <CustomTextarea value={systemPrompt} onChange={setSystemPrompt} placeholder={t.playground.systemPromptPlaceholder} className="flex-1 !min-h-[150px]" />
                 </div>
               </section>
 
@@ -1228,7 +1305,7 @@ export default function App() {
                 </div>
                 <div className="space-y-2">
                   <label className="text-[11px] font-semibold text-body uppercase opacity-60 tracking-wider">{t.logs.range}</label>
-                  <CustomSelect value={logFilterRange} onChange={setLogFilterRange} options={[{ value: '24h', label: t.logs.last24h }, { value: '1h', label: t.logs.lastHour }, { value: '7d', label: t.logs.last7d }]} placeholder={t.logs.last24h} />
+                  <CustomSelect value={logFilterRange} onChange={setLogFilterRange} options={[{ value: 'all', label: t.logs.allTime }, { value: '1h', label: t.logs.lastHour }]} placeholder={t.logs.allTime} />
                 </div>
                 <div className="flex items-end">
                   <button onClick={() => { fetchLogs(); pushToast('INFO', 'Logs Refreshed', 'Log entries updated') }} className="w-full h-11 bg-ink text-white rounded-xl flex items-center justify-center gap-2 hover:bg-neutral-800 transition-all shadow-sm">

@@ -20,14 +20,14 @@
 ```json
 {
   "id": "019fd6c9-...",
-  "token": "[REDACTED]",
+  "token": "dt-<REDACTED>",
   "user_id": "019ec623-...",
   "code_challenge": "h-1Oi6gLAOdnbUD2orefq3JxJz7j4iGjUobnD8JQJ-8",
   "code_challenge_method": "S256",
   "nonce": "7554805c-e90c-4110-87f8-579cbf3e16a8",
   "expires_at": "2026-09-05T11:16:15Z",
   "refresh_token_id": "019fd6c9-...",
-  "refresh_token": "[REDACTED]",
+  "refresh_token": "drt-<REDACTED>",
   "created_at": "2026-08-06T11:16:15Z",
   "updated_at": "2026-08-06T11:16:15Z",
   "expires_in": 2591999994,
@@ -35,6 +35,8 @@
   "refresh_token_expires_at": "2027-08-01T11:16:15Z"
 }
 ```
+
+> 注：示例中的真实 token / refresh_token 已被移除（曾误提交到历史，均已作废轮换）。
 
 关键字段到项目代码的映射：
 

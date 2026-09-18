@@ -1,16 +1,19 @@
 import argparse
+import asyncio
 import collections
+import hmac
 import os
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 import httpx
-from fastapi import FastAPI, HTTPException, Header, Depends
+from fastapi import FastAPI, HTTPException, Header, Depends, Request
 from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
-from .auth import SessionContext, create_session, load_local_session
+from .auth import SessionContext, create_session
 from .bridge import complete_openai_response, stream_openai_response
 from .config import load_config, save_config
 from .database import get_db
@@ -23,8 +26,15 @@ from .accounts import (
     get_active_session,
     rotate_next_account,
     batch_import_accounts,
+    save_device_credentials,
 )
-from .registrar import get_registrar_status, start_registration, stop_registration
+from .registrar import (
+    get_registrar_status,
+    start_registration,
+    stop_registration,
+    device_flow_params,
+    device_poll_once,
+)
 from .tokens import (
     refresh_all_account_tokens,
     refresh_one_account,
@@ -41,10 +51,16 @@ DOCS_HTML = Path(BASE_DIR) / "static" / "docs.html"
 app = FastAPI(title="qoder2api-python")
 app.mount("/assets", StaticFiles(directory=os.path.join(BASE_DIR, "static", "assets")), name="assets")
 
-_session: SessionContext | None = None
 _local_auth_error: str | None = None
+# 无账号时的自动导入每个进程只尝试一次，避免 /ui/status 轮询反复触发导入与刷日志
+_pat_import_attempted = False
+_local_import_attempted = False
 
 logs_queue = collections.deque(maxlen=150)
+
+# 设备授权导入的进行中会话：nonce → {"poll_url", "expires_at"}
+_device_auth_sessions: dict[str, dict[str, Any]] = {}
+_DEVICE_AUTH_TTL = 330.0  # 授权 URL 有效期 5 分钟 + 余量
 
 
 def add_log(msg: str, level: str = "INFO") -> None:
@@ -62,26 +78,47 @@ add_log("Qoder2API Python Bridge initialized.")
 def check_gateway_token(x_gateway_token: str | None = Header(default=None)):
     config = load_config()
     gateway_token = config.get("gateway_token", "admin")
-    if not x_gateway_token or x_gateway_token != gateway_token:
+    if not x_gateway_token or not hmac.compare_digest(str(x_gateway_token), str(gateway_token)):
         raise HTTPException(status_code=401, detail="Unauthorized gateway access")
 
 
+# /ui/verify 简单限速：按来源 IP 记录最近失败，失败后 5s 冷却；
+# 定期清理过期记录，避免字典无限增长
+_verify_attempts: dict[str, float] = {}
+_VERIFY_COOLDOWN = 5.0
+_VERIFY_GC_INTERVAL = 300.0
+_verify_last_gc = 0.0
+
+
 @app.post("/ui/verify")
-async def verify_gateway(payload: dict[str, Any]) -> dict[str, Any]:
-    token = payload.get("token", "").strip()
+async def verify_gateway(payload: dict[str, Any], request: Request) -> dict[str, Any]:
+    global _verify_last_gc
+    client_ip = request.client.host if request.client else "unknown"
+    now = time.time()
+    if now - _verify_last_gc > _VERIFY_GC_INTERVAL:
+        for ip, ts in list(_verify_attempts.items()):
+            if now - ts > 3600:
+                _verify_attempts.pop(ip, None)
+        _verify_last_gc = now
+    if now - _verify_attempts.get(client_ip, 0.0) < _VERIFY_COOLDOWN:
+        raise HTTPException(status_code=429, detail="尝试过于频繁，请稍后再试")
+    token = str(payload.get("token", "")).strip()
     config = load_config()
-    if token == config.get("gateway_token", "admin"):
+    if token and hmac.compare_digest(token, str(config.get("gateway_token", "admin"))):
+        _verify_attempts.pop(client_ip, None)
         return {"status": "ok"}
+    _verify_attempts[client_ip] = now
     raise HTTPException(status_code=401, detail="Invalid Gateway Token")
 
 
 async def get_session() -> SessionContext:
-    global _local_auth_error
+    global _local_auth_error, _pat_import_attempted, _local_import_attempted
     data = db_load_accounts()
     if not data["accounts"]:
-        # Try importing environment PAT if available
+        # Try importing environment PAT if available (once per process)
         pat = os.getenv("QODER_PAT", "").strip()
-        if pat:
+        if pat and not _pat_import_attempted:
+            _pat_import_attempted = True
             add_log("No accounts stored. Importing QODER_PAT from environment...")
             try:
                 sess = await create_session(pat)
@@ -103,7 +140,8 @@ async def get_session() -> SessionContext:
                 add_log(f"Failed to import environment PAT: {exc}", "ERROR")
 
         data = db_load_accounts()
-        if not data["accounts"]:
+        if not data["accounts"] and not _local_import_attempted:
+            _local_import_attempted = True
             add_log("No accounts stored. Attempting to auto-import current local Qoder auth session...")
             try:
                 await import_current_auth()
@@ -237,7 +275,8 @@ async def toggle_account(payload: dict[str, Any], verify: None = Depends(check_g
 @app.post("/ui/accounts/refresh-tokens")
 async def refresh_account_tokens(verify: None = Depends(check_gateway_token)) -> dict[str, Any]:
     """手动触发：刷新所有账号的 token（drt- → deviceToken/refresh）。"""
-    result = refresh_all_account_tokens()
+    # 同步 httpx 放线程池执行，避免阻塞事件循环（每账号最长 25s）
+    result = await asyncio.to_thread(refresh_all_account_tokens)
     add_log(f"Token refresh: ok={result['ok']} failed={result['failed']} total={result['total']}")
     return {"status": "ok", **result}
 
@@ -245,7 +284,7 @@ async def refresh_account_tokens(verify: None = Depends(check_gateway_token)) ->
 @app.get("/ui/accounts/quota")
 async def accounts_quota(verify: None = Depends(check_gateway_token)) -> dict[str, Any]:
     """查看所有启用账号的限额（GET /api/v2/quota/usage）。"""
-    return get_all_accounts_quota()
+    return await asyncio.to_thread(get_all_accounts_quota)
 
 
 @app.delete("/ui/accounts/{uid}")
@@ -301,14 +340,67 @@ async def registrar_status(verify: None = Depends(check_gateway_token)) -> dict[
 
 @app.get("/ui/config")
 async def get_ui_config(verify: None = Depends(check_gateway_token)) -> dict[str, Any]:
-    return load_config()
+    config = load_config()
+    # 管理口令不下发前端，避免明文往返与落日志
+    config.pop("gateway_token", None)
+    return config
 
 
 @app.post("/ui/config")
 async def post_ui_config(payload: dict[str, Any], verify: None = Depends(check_gateway_token)) -> dict[str, Any]:
+    # 前端不再持有 gateway_token：只允许显式传入时才更新口令
+    payload = {k: v for k, v in payload.items() if k != "gateway_token" or v}
     save_config(payload)
     add_log("API Key configuration updated.")
     return {"status": "ok"}
+
+
+@app.post("/ui/device-auth/start")
+async def device_auth_start(verify: None = Depends(check_gateway_token)) -> dict[str, Any]:
+    """设备授权导入（workbuddy login 风格）：生成授权 URL，浏览器登录后轮询取凭据。
+
+    无需 Qoder CLI。授权 URL 5 分钟有效；用 /ui/device-auth/poll 轮询结果。
+    """
+    now = time.time()
+    expired = [k for k, v in _device_auth_sessions.items() if now > v["expires_at"]]
+    for k in expired:
+        _device_auth_sessions.pop(k, None)
+
+    flow = device_flow_params()
+    nonce = flow["nonce"]
+    _device_auth_sessions[nonce] = {"poll_url": flow["poll_url"], "expires_at": now + _DEVICE_AUTH_TTL}
+    add_log("Device auth import started, waiting for browser authorization...")
+    return {"status": "ok", "auth_url": flow["auth_url"], "nonce": nonce, "expires_in": int(_DEVICE_AUTH_TTL)}
+
+
+@app.post("/ui/device-auth/poll")
+async def device_auth_poll(payload: dict[str, Any], verify: None = Depends(check_gateway_token)) -> dict[str, Any]:
+    """轮询设备授权结果：pending=等待授权 / ok=凭据已入库 / expired=会话过期。"""
+    nonce = str(payload.get("nonce") or "")
+    sess = _device_auth_sessions.get(nonce)
+    if not sess or time.time() > sess["expires_at"]:
+        _device_auth_sessions.pop(nonce, None)
+        return {"status": "expired"}
+
+    try:
+        cred = await asyncio.to_thread(device_poll_once, sess["poll_url"])
+    except Exception as exc:
+        return {"status": "pending", "note": f"poll error: {exc}"}
+
+    if cred is None:
+        return {"status": "pending"}
+
+    _device_auth_sessions.pop(nonce, None)
+    try:
+        saved = save_device_credentials(cred)
+    except Exception as exc:
+        add_log(f"Device auth credential save failed: {exc}", "ERROR")
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    add_log(f"Device auth import success: {saved['uid']}")
+    fetch_accounts_data = db_load_accounts()
+    acc = next((a for a in fetch_accounts_data["accounts"] if a["uid"] == saved["uid"]), None)
+    return {"status": "ok", "account": acc or saved}
 
 
 @app.post("/ui/session")
@@ -398,7 +490,8 @@ async def chat_completions(payload: dict[str, Any], authorization: str | None = 
     accounts_data = db_load_accounts()
     enabled_count = sum(1 for acc in accounts_data["accounts"] if acc.get("enabled", True))
     max_retries = max(1, enabled_count)
-    
+    sess: SessionContext | None = None
+
     for attempt in range(max_retries):
         try:
             sess = await get_session()
@@ -428,11 +521,12 @@ async def chat_completions(payload: dict[str, Any], authorization: str | None = 
                 add_log("Completion request finished successfully.")
                 return resp
         except Exception as exc:
-            current_uid = sess.identity.uid if 'sess' in locals() else "unknown"
+            current_uid = sess.identity.uid if sess is not None else "unknown"
             if is_account_error(exc):
                 if is_quota_error(exc):
                     # quota 类错误：先发一次请求确认是否真正 exceeded，而不是直接跳过
-                    q = get_account_quota(current_uid)
+                    # 同步查询放线程池，避免 429 路径卡死事件循环与并发 SSE
+                    q = await asyncio.to_thread(get_account_quota, current_uid)
                     if q.get("ok"):
                         quota = q["quota"]
                         truly_exceeded = bool(quota.get("isQuotaExceeded")) or (quota.get("userQuota") or {}).get("remaining", 1) <= 0

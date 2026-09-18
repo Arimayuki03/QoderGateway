@@ -47,7 +47,7 @@ from qoder_button_parser import pick_button  # noqa: E402
 # 配置
 # ---------------------------------------------------------------------------
 YYDS_API = "https://maliapi.215.im/v1"
-YYDS_KEY = os.getenv("YYDS_API_KEY", "[REDACTED]")
+YYDS_KEY = os.getenv("YYDS_API_KEY", "")
 REGISTER_URL = "https://qoder.com/users/sign-up"
 LOGIN_URL = "https://qoder.com/users/sign-in"
 SUCCESS_URL_MARK = "/download"          # 注册成功跳转特征

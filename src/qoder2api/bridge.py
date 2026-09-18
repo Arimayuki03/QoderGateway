@@ -9,7 +9,7 @@ from typing import Any
 import httpx
 
 from . import encoding
-from .auth import SessionContext, bearer_headers
+from .auth import SessionContext
 from .env import httpx_client_kwargs
 
 

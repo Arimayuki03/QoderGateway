@@ -31,6 +31,7 @@ if sys.platform == "win32":
 from .core import (
     _yyds_key,
     get_registrar_status,
+    set_output_file,
     start_registration,
     stop_registration,
 )
@@ -59,6 +60,7 @@ def main(argv: list[str] | None = None) -> int:
         print("[error] YYDS_API_KEY 未配置：请设置环境变量或在项目根 .env 添加 YYDS_API_KEY=AC-...")
         return 1
 
+    set_output_file(args.output)  # --output 接线到导出逻辑
     r = start_registration(parents=args.parents)
     if not r.get("ok"):
         print(f"[error] {r.get('error')}")

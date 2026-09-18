@@ -1,6 +1,6 @@
 Return-Path: <no-reply@qoder.com>
 Received: from out34-32.sg.b.dm.aliyun.com ([8.219.34.32]) by smtp.215.im
-  for <qoder85113870@getaura.today>; Thu, 06 Aug 2026 11:37:39 +0000 (UTC)
+  for <qoder***@getaura.today>; Thu, 06 Aug 2026 11:37:39 +0000 (UTC)
 X-AliDM-RcptTo: cW9kZXI4NTExMzg3MEBnZXRhdXJhLnRvZGF5
 Feedback-ID: default:no-reply@qoder.com:excellent_SmtpTrigger:418251
 DKIM-Signature:v=1; a=rsa-sha256; c=relaxed/relaxed;
@@ -13,7 +13,7 @@ Received: from localhost(mailfrom:no-reply@qoder.com fp:SMTPD_4w3hSEfYkip cluste
           Thu, 06 Aug 2026 19:37:37 +0800
 X-EnvId: 8000000304681782199
 Content-Transfer-Encoding: quoted-printable
-To: <qoder85113870@getaura.today>
+To: <qoder***@getaura.today>
 Subject: Verify your Email with Qoder
 Message-Id: <1786016257858547553.1.8724487382312281502@qbase-nezha-ap-southeast-1-prd-cu9gc-5thn2>
 From: <no-reply@qoder.com>
@@ -198,8 +198,7 @@ ign=3D"middle"
                                                                         sty=
 le=3D"font-size:40px;font-family:SF Pro;font-weight:normal;line-height:150%=
 ;letter-spacing:5px;color:#232323;margin-bottom:40px">
-                                                                        468=
-896
+                                                                        123456
                                                                     </td>
                                                                 </tr>
                                                                 </tbody>

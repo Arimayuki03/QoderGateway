@@ -67,7 +67,21 @@ cp .env.example .env
 QODER_ADMIN_PASSWORD=your-strong-password
 ```
 
+> **注意：`QODER_ADMIN_PASSWORD` 只在首次建库时生效（写入 SQLite），
+> 之后以控制台存储的口令为准，可在 WebUI 中修改。**
 > **默认密码是 `admin`，强烈建议第一次登录后立即修改。**
+
+### 内置注册机 / Built-in Registrar
+
+使用内置批量注册功能前，需在 `.env` 或系统环境变量中配置 YYDS Mail API Key：
+
+```env
+YYDS_API_KEY=AC-xxxxxxxxxxxxxxxxxxxxxxxx
+```
+
+| 变量 | 必填 | 说明 |
+|------|------|------|
+| `YYDS_API_KEY` | 注册机必填 | YYDS Mail API Key（`AC-` 开头），用于创建临时邮箱并接收验证码 |
 
 ### 启动 / Start
 
@@ -104,7 +118,8 @@ curl http://127.0.0.1:5050/v1/chat/completions \
 |------|------|--------|
 | `QODER_HOST` | 服务绑定地址 | `127.0.0.1` |
 | `QODER_PORT` | 服务端口 | `5050` |
-| `QODER_ADMIN_PASSWORD` | 管理员密码（覆盖 SQLite 存储值） | `admin` |
+| `QODER_ADMIN_PASSWORD` | 管理员密码（仅首次建库时生效，之后以 SQLite/WebUI 为准） | `admin` |
+| `YYDS_API_KEY` | YYDS Mail API Key（内置注册机必填，`AC-` 开头） | 空 |
 | `QODER_PROXY` | 出站代理地址 | 空 |
 | `QODER_ENABLE_DOCUMENTS` | 是否启用文档页 | `1` |
 | `QODER_ENABLE_LANDING` | 是否启用 Landing Page | `1` |
