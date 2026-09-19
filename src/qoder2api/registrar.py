@@ -40,7 +40,7 @@ from .env import httpx_client_kwargs, load_dotenv, proxy_url
 YYDS_API = "https://maliapi.215.im/v1"
 REGISTER_URL = "https://qoder.com/users/sign-up"
 SUCCESS_URL_MARK = "/download"
-DEVICE_CLIENT_ID = "[REDACTED]"
+DEVICE_CLIENT_ID = "e883ade2-e6e3-4d6d-adf7-f92ceff5fdcb"
 DEVICE_VERIFIER_CHARS = string.ascii_letters + string.digits + "-._~"
 
 # 服务状态（单例，多任务）

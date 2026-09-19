@@ -128,7 +128,7 @@ challenge = BASE64URL(SHA256(verifier))   // base64 后 + → -, / → _, 去掉
 https://qoder.com/device/selectAccounts?challenge=<challenge>&challenge_method=S256&nonce=<nonce>&machine_id=<machineId>&client_id=<clientId>
 ```
 
-- `client_id`（从混淆解密得到）：`[REDACTED]`（默认）或 `e93fe488-5778-4c35-a6fc-0f54ed7b3139`
+- `client_id`（从混淆解密得到）：`e883ade2-e6e3-4d6d-adf7-f92ceff5fdcb`（默认）或 `e93fe488-5778-4c35-a6fc-0f54ed7b3139`
 - 用户登录 → 选账号 → 同意 → 服务端绑定 `challenge ↔ nonce ↔ 用户`
 
 ### 4.4 轮询 poll（循环）
