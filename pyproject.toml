@@ -1,6 +1,6 @@
 [project]
 name = "qoder2api-python"
-version = "0.1.0"
+version = "0.2.0"
 description = "Python WebUI and OpenAI-compatible bridge for Qoder"
 readme = "README.md"
 requires-python = ">=3.11"

@@ -1,6 +1,6 @@
 [project]
 name = "qodergate-register"
-version = "0.1.0"
+version = "0.2.0"
 description = "Qoder standalone auto registrar (infinite loop, exports JSON)"
 readme = "README.md"
 requires-python = ">=3.11"

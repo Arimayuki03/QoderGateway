@@ -7,4 +7,4 @@ from .core import (
 )
 
 __all__ = ["start_registration", "stop_registration", "get_registrar_status"]
-__version__ = "0.1.0"
+__version__ = "0.2.0"

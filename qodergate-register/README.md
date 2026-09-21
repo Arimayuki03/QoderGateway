@@ -1,9 +1,26 @@
-# qodergate-register
+<h1 align="center">qodergate-register</h1>
 
-Qoder 独立注册机：无限循环注册（母线程 × 3 子任务并发），浏览器隐藏后台、
-人机验证置顶一次，划完自动轮到下一个；每个成功注册自动**导出 JSON**。
+<p align="center">
+  <strong>Qoder 独立注册机：无限循环批量注册，成功账号自动导出 JSON</strong><br>
+  <sub>Standalone auto registrar for Qoder — infinite loop, exports JSON for QoderGateway batch import.</sub>
+</p>
 
-> 从 QoderGateway 的注册机模块独立提取，无网关依赖。
+<p align="center">
+  <img src="https://img.shields.io/badge/version-0.2.0-blue" alt="Version">
+  <img src="https://img.shields.io/badge/python-%3E%3D3.11-blue?logo=python&logoColor=white" alt="Python >= 3.11">
+  <img src="https://img.shields.io/badge/license-MIT-orange" alt="License">
+</p>
+
+<p align="center">
+  <a href="https://github.com/Arimayuki03/QoderGateway">⬅ 返回 QoderGateway 主项目</a>
+</p>
+
+---
+
+## 简介
+
+从 [QoderGateway](https://github.com/Arimayuki03/QoderGateway) 的注册机模块独立提取的 CLI，无网关依赖。
+母线程 × 3 子任务并发，浏览器隐藏后台、人机验证置顶一次，划完自动轮到下一个；每个成功注册自动**导出 JSON**。
 
 ## 安装
 
@@ -53,3 +70,7 @@ uv run python -m qodergate_register --parents 1 --output ./out.json
 - 人机验证（阿里云滑块）需人工完成：窗口平时隐藏，验证时置顶弹出，划完自动隐藏。
 - 每母线程每批 3 个子任务并发；批内 2s 错峰，保证验证时间错开、连续可划。
 - 遵守 Qoder 服务条款，控制使用频率。
+
+## License
+
+MIT，与主项目一致。
