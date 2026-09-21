@@ -9,6 +9,7 @@
   <a href="https://github.com/Arimayuki03/QoderGateway/releases"><img src="https://img.shields.io/github/v/release/Arimayuki03/QoderGateway?logo=github&label=release" alt="Release"></a>
   <a href="https://github.com/Arimayuki03/QoderGateway/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/Arimayuki03/QoderGateway/ci.yml?label=CI&logo=github" alt="CI"></a>
   <a href="https://github.com/Arimayuki03/QoderGateway/stargazers"><img src="https://img.shields.io/github/stars/Arimayuki03/QoderGateway?logo=github&color=yellow" alt="Stars"></a>
+  <a href="https://github.com/bzym2/QoderGateway"><img src="https://img.shields.io/badge/fork_of-bzym2%2FQoderGateway-8A2BE2?logo=github" alt="Fork of bzym2/QoderGateway"></a>
   <img src="https://img.shields.io/badge/python-%3E%3D3.11-blue?logo=python&logoColor=white" alt="Python >= 3.11">
   <img src="https://img.shields.io/badge/fastapi-0.115+-green?logo=fastapi&logoColor=white" alt="FastAPI">
   <img src="https://img.shields.io/badge/license-MIT-orange" alt="License">
@@ -29,6 +30,8 @@
 ## 📖 简介
 
 QoderGateway 是一个运行在本地的 **账号池网关**：导入多个 Qoder 账号后，对外提供统一的 OpenAI 兼容接口（`/v1/chat/completions`）。请求自动在账号池中轮转，单个账号失败自动冷却并切换下一个；配套的 WebUI 控制台支持账号管理、API Key 管理、AI Playground、设备授权登录和自动注册机。
+
+> **[Fork 说明]** 本仓库 fork 自 [bzym2/QoderGateway](https://github.com/bzym2/QoderGateway)，并在此基础上进行维护与增强。
 
 - 🌐 **中英文档站内置**：启动后访问 [`/documents`](http://127.0.0.1:5050/documents) 获取完整 Wiki
 - 🔌 **OpenAI 兼容**：任何支持自定义 Base URL 的客户端（Cherry Studio、LobeChat、Open WebUI 等）均可直接接入
@@ -245,5 +248,6 @@ cd frontend && npx tsc --noEmit && npm run build
 
 ## 💗 致谢
 
-- 本项目思路来源于 [cubk1/qoder2api](https://github.com/cubk1/qoder2api/)，在此基础上用 Python 重写了后端并新增了 WebUI 管理控制台、SQLite 持久化、多账号池轮转和独立文档站
+- 本项目 fork 自 [bzym2/QoderGateway](https://github.com/bzym2/QoderGateway)，原项目受 [cubk1/qoder2api](https://github.com/cubk1/qoder2api/) 启发，用 Python 重写了后端并新增了 WebUI 管理控制台、SQLite 持久化、多账号池轮转和独立文档站
+- 感谢原作者 [bzym2](https://github.com/bzym2) 的工作，本仓库在此基础上继续维护与增强
 - 特别感谢 [LINUX DO](https://linux.do) 社区提供的交流与推广平台
